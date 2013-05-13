@@ -4,14 +4,19 @@
 require 'nokogiri'
 require 'htmlentities'
 require 'ydocx/markup_method'
+require 'roman-numerals'
 
 module YDocx
   class Parser
     include MarkupMethod
     attr_accessor :indecies, :images, :result, :space
-    def initialize(doc, rel)
+    def initialize(doc, rel, rel_files)
       @doc = Nokogiri::XML.parse(doc)
       @rel = Nokogiri::XML.parse(rel)
+      @rel_files = rel_files
+      @styles = {}
+      @numbering_styles = {}
+      @numbering_count = {}
       @coder = HTMLEntities.new
       @indecies = []
       @images = []
@@ -27,6 +32,52 @@ module YDocx
     def init
     end
     def parse
+      if @rel_files.has_key?('styles.xml')
+        style_xml = Nokogiri::XML.parse(@rel_files['styles.xml'])
+        style_xml.xpath('//w:styles//w:style').each do |style|
+          @styles[style['w:styleId']] = style
+        end
+      end
+      
+      if @rel_files.has_key?('numbering.xml')
+        num_xml = Nokogiri::XML.parse(@rel_files['numbering.xml'])
+        abstract_nums = {}
+        num_xml.xpath('//w:numbering//w:abstractNum').each do |abstr|
+          abstract_nums[abstr['w:abstractNumId']] = abstr
+        end
+        num_xml.xpath('//w:numbering//w:num').each do |num|
+          num_id = num['w:numId'].to_i
+          @numbering_styles[num_id] = {}
+          @numbering_count[num_id] = {}
+          num.xpath('w:abstractNumId').each do |abstr|
+            if abstract_nums.has_key?(abstr['w:val'])
+              abstract_nums[abstr['w:val']].xpath('w:lvl').each do |lvl|
+                indent_level = lvl['w:ilvl'].to_i
+                @numbering_count[num_id][indent_level] = 0
+                @numbering_styles[num_id][indent_level] = {
+                  :start  => lvl.xpath('w:start').first['w:val'].to_i,
+                  :numFmt => lvl.xpath('w:numFmt').first['w:val'],
+                  :format => lvl.xpath('w:lvlText').first['w:val'],
+                  :isLgl  => !lvl.xpath('w:isLgl').first.nil?
+                }
+              end
+            end
+          end
+          num.xpath('w:lvlOverride').each do |over|
+            indent_level = over['w:ilvl'].to_i
+            if start_over = over.xpath('w:startOverride').first
+              @numbering_styles[num_id][indent_level][:start] = start_over['w:val'].to_i
+            elsif lvl = over.xpath('w:lvl').first
+              @numbering_styles[num_id][indent_level] = {
+                :start  => lvl.xpath('w:start').first['w:val'].to_i,
+                :numFmt => lvl.xpath('w:numFmt').first['w:val'],
+                :format => lvl.xpath('w:lvlText').first['w:val'],
+                :isLgl  => !lvl.xpath('w:isLgl').first.nil?
+              }
+            end
+          end
+        end
+      end
       @doc.xpath('//w:document//w:body').children.map do |node|
         case node.node_name
         when 'text'
@@ -214,13 +265,85 @@ module YDocx
         source << File.basename(target)
       end
     end
+    def get_numbering(node)
+      if num_prop = node.xpath('w:pPr//w:numPr').first      
+        if (base = node.xpath('w:basedOn').first) && (base_style = @styles[base['w:val']])
+          indent_level, num_id = get_numbering(base_style)          
+        end
+        if ilvl = num_prop.xpath('w:ilvl').first
+          indent_level = ilvl['w:val'].to_i
+        end
+        if nid = num_prop.xpath('w:numId').first
+          num_id = nid['w:val'].to_i
+        end
+      end
+      return indent_level, num_id
+    end
     def parse_paragraph(node)
       content = []
       if block = parse_block(node)
         content << block
       else # as p
         pos = 0
+        style = node.xpath('w:pPr//w:pStyle').first
+        if style
+          style = @styles[style['w:val']]
+        end
+        indent_level, num_id = get_numbering(node)
+        if num_id.nil? && style
+          indent_level, num_id = get_numbering(style)
+        end
+        indent_level ||= 0
+        unless num_id.nil?
+          if @numbering_styles[num_id] && style = @numbering_styles[num_id][indent_level]
+            format = style[:format]
+            is_legal = style[:isLgl]
+            for ilvl in 0..indent_level
+              if style = @numbering_styles[num_id][ilvl]
+                num = style[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
+                replace = '%' + (ilvl+1).to_s
+                next if !format.include?(replace)
+                str = case (is_legal and ilvl < indent_level) ? 'decimal' : style[:numFmt]
+                when 'decimalZero'
+                  sprintf("%02d", num)
+                when 'upperRoman'
+                  RomanNumerals.to_roman(num)
+                when 'lowerRoman'
+                  RomanNumerals.to_roman(num).downcase
+                when 'upperLetter'
+                  letter = (num-1) % 26
+                  rep = (num-1) / 26 + 1
+                  (letter + 65).chr * rep
+                when 'lowerLetter'
+                  letter = (num-1) % 26
+                  rep = (num-1) / 26 + 1
+                  (letter + 97).chr * rep
+                # todo: idk
+                # when 'ordinal'
+                # when 'cardinalText'
+                # when 'ordinalText'
+                when 'bullet'
+                  '&bull;'
+                else
+                  num.to_s
+                end
+              end
+              format = format.sub(replace, str)
+            end              
+            @numbering_count[num_id][indent_level] += 1
+            # reset higher counts
+            @numbering_count[num_id].each_key do |level|
+              if level > indent_level
+                @numbering_count[num_id][level] = 0
+              end
+            end
+            content << format + ' ' unless format == ''
+          end
+        end
         node.xpath('w:r').each do |r|
+          unless r.xpath('w:br').empty?
+            content << "<br />"
+          end
           unless r.xpath('w:t').empty?
             content << parse_text(r, (pos == 0)) # rm indent
             pos += 1
@@ -232,7 +355,7 @@ module YDocx
               end
             end
             unless r.xpath('w:sym').empty?
-              code = r.xpath('w:sym').first['char'].downcase # w:char
+              code = r.xpath('w:sym').first['w:char'].downcase # w:char
               content << character_replace(code)
               pos += 1
             end
@@ -258,20 +381,64 @@ module YDocx
     end
     def parse_table(node)
       table = markup :table
-      node.xpath('w:tr').each do |tr|
+      
+      vmerge_type = {}
+      # first, compute rowspans
+      node.xpath('w:tr').each_with_index do |tr, row|
+        vmerge_type[row] = {}
+        col = 0
+        tr.xpath('w:tc').each do |tc|
+          tc.xpath('w:tcPr').each do |tcpr|
+            cells = 1
+            if span = tcpr.xpath('w:gridSpan').first
+              cells = span['w:val'].to_i
+            end
+            if merge = tcpr.xpath('w:vMerge').first
+              if merge['w:val'].nil?
+                vmerge_type[row][col] = 1;
+              else
+                vmerge_type[row][col] = 2
+              end
+            else
+              vmerge_type[row][col] = 0
+            end
+            col += cells
+          end
+        end
+      end
+      
+      node.xpath('w:tr').each_with_index do |tr, row|
         cells = markup :tr
+        col = 0
         tr.xpath('w:tc').each do |tc|
           attributes = {}
+          show = true
+          columns = 1
           tc.xpath('w:tcPr').each do |tcpr|
-            if span = tcpr.xpath('w:gridSpan') and !span.empty?
-              attributes[:colspan] = span.first['val'] # w:val
+            if span = tcpr.xpath('w:gridSpan').first
+              columns = attributes[:colspan] = span['w:val'].to_i
+            end
+            if vmerge_type[row][col] == 2
+              nrow = row + 1
+              while !vmerge_type[nrow].nil? and vmerge_type[nrow][col] == 1
+                nrow += 1
+              end
+             attributes[:rowspan] = nrow - row
+            end
+            if align = tcpr.xpath('w:vAlign').first
+              attributes[:valign] = align['w:val']
+            else
+              attributes[:valign] = 'top'
             end
           end
           cell = markup :td, [], attributes
           tc.xpath('w:p').each do |p|
             cell[:content] << parse_paragraph(p)
           end
-          cells[:content] << cell
+          if vmerge_type[row][col] != 1
+            cells[:content] << cell
+          end
+          col += columns
         end
         table[:content] << cells
       end
@@ -285,13 +452,13 @@ module YDocx
       if rpr = r.xpath('w:rPr')
         text = apply_fonts(rpr, text)
         text = apply_align(rpr, text)
-        unless rpr.xpath('w:u').empty?
+        unless rpr.xpath('w:u').empty? || rpr.xpath('w:u').first['w:val'] == '0'
           text = markup(:span, text, {:style => "text-decoration:underline;"})
         end
-        unless rpr.xpath('w:i').empty?
+        unless rpr.xpath('w:i').empty? || rpr.xpath('w:i').first['w:val'] == '0'
           text = markup(:em, text)
         end
-        unless rpr.xpath('w:b').empty?
+        unless rpr.xpath('w:b').empty? || rpr.xpath('w:b').first['w:val'] == '0'
           text = markup(:strong, text)
         end
       end

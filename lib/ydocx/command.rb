@@ -71,8 +71,6 @@ Usage: #{self.command} file [options]
           end
         end
         if !args.include?('-f') and !args.include?('--format')
-          # default fachinfo
-          require 'ydocx/templates/fachinfo'
           options.merge!({:style => :frame}) if action == :to_html
         end
         options

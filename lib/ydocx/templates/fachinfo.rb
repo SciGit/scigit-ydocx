@@ -106,7 +106,7 @@ module YDocx
     end
     def parse_title(node, text)
       if @indecies.empty? and !text.empty? and
-         (node.previous.inner_text.strip.empty? or node.parent.previous.nil?)
+         (node.previous.nil? or node.previous.inner_text.strip.empty? or node.parent.previous.nil?)
         # The first line as package name
         title = (@lang == 'fr' ? 'Titre' : 'Titel')
         @indecies << {:text => title, :id => title.downcase}

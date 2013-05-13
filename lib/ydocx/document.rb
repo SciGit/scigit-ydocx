@@ -4,7 +4,7 @@
 require 'pathname'
 require 'zip/zip'
 begin
-  require 'RMagick'
+  #require 'RMagick'
 rescue LoadError
   warn "Couldn't load RMagick: .wmf conversion off"
 end
@@ -121,7 +121,16 @@ module YDocx
       @zip = Zip::ZipFile.open(@path.realpath)
       doc = @zip.find_entry('word/document.xml').get_input_stream
       rel = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
-      @parser = Parser.new(doc, rel) do |parser|
+      rel_xml = Nokogiri::XML.parse(rel)
+      rel_files = {}
+      rel_xml.xpath('/').children.each do |relat|
+        relat.children.each do |r|
+          if file = @zip.find_entry('word/' + r['Target'])
+            rel_files[r['Target']] = file.get_input_stream
+          end
+        end
+      end
+      @parser = Parser.new(doc, rel, rel_files) do |parser|
         parser.lang = @options[:lang] if @options[:lang]
         @contents = parser.parse
         @indecies = parser.indecies
