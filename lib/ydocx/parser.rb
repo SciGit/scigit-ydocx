@@ -7,7 +7,7 @@ require 'ydocx/markup_method'
 require 'roman-numerals'
 
 module YDocx
-  Style = Struct.new(:b, :u, :i, :font, :valign, :ilvl, :numid)
+  Style = Struct.new(:b, :u, :i, :font, :sz, :valign, :ilvl, :numid)
   class Parser
     include MarkupMethod
     attr_accessor :indecies, :images, :result, :space
@@ -17,7 +17,7 @@ module YDocx
       @rel_files = rel_files
       @style_nodes = {}
       @styles = {}
-      @numbering_styles = {}
+      @numbering_desc = {}
       @numbering_count = {}
       @coder = HTMLEntities.new
       @indecies = []
@@ -33,6 +33,14 @@ module YDocx
     end
     
     def init
+    end
+    
+    def extend_style(old_style, new_style)
+      style = Style.new()
+      new_style.members.each do |key|
+        style[key] = new_style[key] || old_style[key]
+      end
+      style
     end
     
     def apply_style(old_style, node)
@@ -60,6 +68,9 @@ module YDocx
         end
         if font = rpr.xpath('w:rFonts').first
           style.font = font['w:ascii']
+        end
+        if sz = rpr.xpath('w:sz').first
+          style.sz = sz['w:val'].to_i
         end
       end
       style
@@ -99,18 +110,19 @@ module YDocx
         end
         num_xml.xpath('//w:numbering//w:num').each do |num|
           num_id = num['w:numId'].to_i
-          @numbering_styles[num_id] = {}
+          @numbering_desc[num_id] = {}
           @numbering_count[num_id] = {}
           num.xpath('w:abstractNumId').each do |abstr|
             if abstract_nums.has_key?(abstr['w:val'])
               abstract_nums[abstr['w:val']].xpath('w:lvl').each do |lvl|
                 indent_level = lvl['w:ilvl'].to_i
                 @numbering_count[num_id][indent_level] = 0
-                @numbering_styles[num_id][indent_level] = {
+                @numbering_desc[num_id][indent_level] = {
                   :start  => lvl.xpath('w:start').first['w:val'].to_i,
                   :numFmt => lvl.xpath('w:numFmt').first['w:val'],
                   :format => lvl.xpath('w:lvlText').first['w:val'],
-                  :isLgl  => !lvl.xpath('w:isLgl').first.nil?
+                  :isLgl  => !lvl.xpath('w:isLgl').first.nil?,
+                  :style  => apply_style(Style.new(), lvl)
                 }
               end
             end
@@ -118,13 +130,14 @@ module YDocx
           num.xpath('w:lvlOverride').each do |over|
             indent_level = over['w:ilvl'].to_i
             if start_over = over.xpath('w:startOverride').first
-              @numbering_styles[num_id][indent_level][:start] = start_over['w:val'].to_i
+              @numbering_desc[num_id][indent_level][:start] = start_over['w:val'].to_i
             elsif lvl = over.xpath('w:lvl').first
-              @numbering_styles[num_id][indent_level] = {
+              @numbering_desc[num_id][indent_level] = {
                 :start  => lvl.xpath('w:start').first['w:val'].to_i,
                 :numFmt => lvl.xpath('w:numFmt').first['w:val'],
                 :format => lvl.xpath('w:lvlText').first['w:val'],
-                :isLgl  => !lvl.xpath('w:isLgl').first.nil?
+                :isLgl  => !lvl.xpath('w:isLgl').first.nil?,
+                :style  => apply_style(Style.new(), lvl)
               }
             end
           end
@@ -146,14 +159,18 @@ module YDocx
     end
     private
     def apply_fonts(style, text)
-      if style.font == 'Symbol'
-        _text = ''
-        text.unpack('U*').each do |char|
-          _text << character_replace(char.to_s(16))
-        end
-        text = _text
+      css = ''
+      if style.font
+        css += sprintf("font-family: '%s';", style.font)
       end
-      markup :font, text, {:face => style.font}
+      if style.sz
+        css += sprintf("font-size: %dpt;", style.sz / 2)
+      end
+      if css.empty?
+        text
+      else
+        markup :font, text, {:style => css}
+      end
     end
     def apply_align(style, text)
       if style.valign == 'subscript'
@@ -175,66 +192,26 @@ module YDocx
       text = @coder.encode(text, :named)
       text
     end
-    def character_replace(code)
-      code = '0x' + code
-      # NOTE
-      # replace with rsemble html character ref
-      # Symbol Font to HTML Character named ref
-      case code
-      when '0xf020' # '61472'
-        ""
-      when '0xf025' # '61477'
-        "%"
-      when '0xf02b' # '61482'
-        "*"
-      when '0xf02b' # '61483'
-        "+"
-      when '0xf02d' # '61485'
-        "-"
-      when '0xf02f' # '61487'
-        "/"
-      when '0xf03c' # '61500'
-        "&lt;"
-      when '0xf03d' # '61501'
-        "="
-      when '0xf03e' # '61502'
-        "&gt;"
-      when '0xf040' # '61504'
-        "&cong;"
-      when '0xf068' # '61544'
-        "&eta;"
-      when '0xf071' # '61553'
-        "&theta;"
-      when '0xf06d' # '61549'
-        "&mu;"
-      when '0xf0a3' # '61603'
-        "&le;"
-      when '0xf0ab' # '61611'
-        "&harr;"
-      when '0xf0ac' # '61612'
-        "&larr;"
-      when '0xf0ad' # '61613'
-        "&uarr;"
-      when '0xf0ae' # '61614'
-        "&rarr;"
-      when '0xf0ad' # '61615'
-        "&darr;"
-      when '0xf0b1' # '61617'
-        "&plusmn;"
-      when '0xf0b2' # '61618'
-        "&Prime;"
-      when '0xf0b3' # '61619'
-        "&ge;"
-      when '0xf0b4' # '61620'
-        "&times;"
-      when '0xf0b7' # '61623'
-        "&sdot;"
-      else
-        "&#" + code[1..-1]
+    def escape_whitespace(text)
+      prev_ws = true
+      new_text = ''
+      text.each_char do |c|
+        if c == "\n"
+          new_text += "<br />"
+          prev_ws = true
+        elsif c =~ /[[:space:]]/
+          if prev_ws
+            new_text += @space
+          else
+            new_text += c
+          end
+          prev_ws = true
+        else  
+          new_text += c
+          prev_ws = false
+        end
       end
-    end
-    def optional_escape(text)
-      text
+      new_text
     end
     def parse_block(node)
       nil # default no block element
@@ -320,15 +297,16 @@ module YDocx
         num_id = style.numid
         indent_level = style.ilvl || 0
         unless num_id.nil?
-          if @numbering_styles[num_id] && num_style = @numbering_styles[num_id][indent_level]
-            format = num_style[:format]
-            is_legal = num_style[:isLgl]
+          if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
+            format = num_desc[:format]
+            is_legal = num_desc[:isLgl]
+            num_style = extend_style(style, num_desc[:style])
             for ilvl in 0..indent_level
-              if num_style = @numbering_styles[num_id][ilvl]
-                num = num_style[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
+              if num_desc = @numbering_desc[num_id][ilvl]
+                num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
                 replace = '%' + (ilvl+1).to_s
                 next if !format.include?(replace)
-                str = case (is_legal and ilvl < indent_level) ? 'decimal' : num_style[:numFmt]
+                str = case (is_legal and ilvl < indent_level) ? 'decimal' : num_desc[:numFmt]
                 when 'decimalZero'
                   sprintf("%02d", num)
                 when 'upperRoman'
@@ -363,55 +341,46 @@ module YDocx
               end
             end
             unless format == ''
-              content << format + ' '
+              content << parse_text(format, num_style) << @space
             end
           end
         end
         
-        node.xpath('w:r').each do |r|
+        node.xpath('.//w:r').each do |r|
           r_style = apply_style(style, r)
-          unless r.xpath('w:br').empty?
-            content << "<br />"
-          end        
-          unless r.xpath('w:tab').empty?
-            if content.last != @space and pos != 0 # ignore tab at line head
-              content << @space
-              pos += 1
-            end
-          end
-          
-          text = ''
-          if r.xpath('w:t')
-            text = r.xpath('w:t').map(&:text).join('')
-          elsif sym = r.xpath('w:sym').first
-            code = sym['w:char'].downcase
-            text = character_replace(code)
-            if sym['w:font']
-              r_style.font = sym['w:font']
-            end
-            pos += 1
-          elsif !r.xpath('w:pict').empty? or !r.xpath('w:drawing').empty?
+          if !r.xpath('w:pict').empty? || !r.xpath('w:drawing').empty?
             content << parse_image(r)
-          end
-          
-          if !text.empty?
-            content << parse_text(text, r_style, (pos == 0))
+          else
+            text = ''
+            r.children.each do |t|
+              if t.name == 'br'
+                text += "\n"
+              elsif t.name == 'tab'
+                text += "\t"
+              elsif t.name == 't'
+                text += t.text
+              elsif t.name == 'sym'
+                val = t['w:char'].to_i(16)
+                if val >= 0xf000
+                  val -= 0xf000
+                end
+                chr_style = r_style.dup()
+                if t['w:font']
+                  chr_style.font = t['w:font']
+                end
+                content << parse_text(text, r_style)
+                content << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
+                text = ''
+              end
+            end
+            unless text.empty?
+              content << parse_text(text, r_style)
+            end
           end
         end
       end
       content.compact!
-      unless content.empty?
-        paragraph = content.select do |c|
-          c.is_a?(Hash) and c[:tag].to_s =~ /^h[1-9]/u
-        end.empty?
-        if paragraph
-          markup :p, content
-        else
-          content.first
-        end
-      else
-        {}
-      end
+      markup :p, content
     end
     def parse_table(node)
       table = markup :table
@@ -478,10 +447,11 @@ module YDocx
       end
       table
     end
-    def parse_text(text, style, lstrip=false)
-      text = character_encode(text)
-      text = optional_escape(text)
-      text = text.lstrip if lstrip
+    def parse_text(text, style, raw = false)
+      unless raw
+        text = character_encode(text)
+        text = escape_whitespace(text)
+      end
       text = apply_fonts(style, text)
       text = apply_align(style, text)
       if style.u
