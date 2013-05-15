@@ -7,6 +7,7 @@ require 'ydocx/markup_method'
 require 'roman-numerals'
 
 module YDocx
+  Style = Struct.new(:b, :u, :i, :font, :valign, :ilvl, :numid)
   class Parser
     include MarkupMethod
     attr_accessor :indecies, :images, :result, :space
@@ -14,6 +15,7 @@ module YDocx
       @doc = Nokogiri::XML.parse(doc)
       @rel = Nokogiri::XML.parse(rel)
       @rel_files = rel_files
+      @style_nodes = {}
       @styles = {}
       @numbering_styles = {}
       @numbering_count = {}
@@ -29,14 +31,64 @@ module YDocx
         yield self
       end
     end
+    
     def init
     end
+    
+    def apply_style(old_style, node)
+      style = old_style.dup()
+      if numpr = node.at_xpath('w:pPr//w:numPr')
+        if ilvl = numpr.at_xpath('w:ilvl')
+          style.ilvl = ilvl['w:val'].to_i
+        end
+        if numid = numpr.at_xpath('w:numId')
+          style.numid = numid['w:val'].to_i
+        end
+      end
+      if rpr = node.xpath('w:rPr').first
+        if b = rpr.xpath('w:b').first
+          style.b = b['w:val'].nil? || b['w:val'] == '1'
+        end
+        if i = rpr.xpath('w:i').first
+          style.i = i['w:val'].nil? || i['w:val'] == '1'
+        end
+        if u = rpr.xpath('w:u').first
+          style.u = u['w:val'] != 'none'
+        end
+        if valign = rpr.xpath('w:vertAlign').first
+          style.valign = valign['w:val']
+        end
+        if font = rpr.xpath('w:rFonts').first
+          style.font = font['w:ascii']
+        end
+      end
+      style
+    end
+    
+    def compute_style(id)
+      node = @style_nodes[id]
+      if @styles.has_key?(id)
+        @styles[id]
+      else
+        if based = node.at_xpath('w:basedOn')
+          style = compute_style(based['w:val'])
+        else
+          style = Style.new()
+        end
+        @styles[id] = apply_style(style, node)
+      end
+    end
+    
     def parse
       if @rel_files.has_key?('styles.xml')
         style_xml = Nokogiri::XML.parse(@rel_files['styles.xml'])
         style_xml.xpath('//w:styles//w:style').each do |style|
-          @styles[style['w:styleId']] = style
+          @style_nodes[style['w:styleId']] = style
         end
+      end
+      
+      @style_nodes.keys.each do |id|
+        compute_style(id)
       end
       
       if @rel_files.has_key?('numbering.xml')
@@ -93,40 +145,29 @@ module YDocx
       @result
     end
     private
-    def apply_fonts(rpr, text)
-      symbol = false
-      unless rpr.xpath('w:rFonts').empty?
-        rpr.xpath('w:rFonts').each do |font|
-          if font.values.include? 'Symbol'
-            symbol = true
-          end
-          break if symbol
-        end
-      end
-      if symbol
+    def apply_fonts(style, text)
+      if style.font == 'Symbol'
         _text = ''
         text.unpack('U*').each do |char|
           _text << character_replace(char.to_s(16))
         end
         text = _text
       end
-      text
+      markup :font, text, {:face => style.font}
     end
-    def apply_align(rpr, text)
-      unless rpr.xpath('w:vertAlign').empty?
-        script = rpr.xpath('w:vertAlign').first['val'].to_sym
-        if script == :subscript
-          text = markup(:sub, text)
-        elsif script == :superscript
-          if text =~ /^[0-9]$/
-            text = "&sup" + text + ";"
-          else
-            text = markup(:sup, text)
-          end
+    def apply_align(style, text)
+      if style.valign == 'subscript'
+        text = markup(:sub, text)
+      elsif style.valign == 'superscript'
+        if text =~ /^[0-9]$/
+          text = "&sup" + text + ";"
+        else
+          text = markup(:sup, text)
         end
       end
       text
     end
+    
     def character_encode(text)
       text.force_encoding('utf-8')
       # NOTE
@@ -189,9 +230,7 @@ module YDocx
       when '0xf0b7' # '61623'
         "&sdot;"
       else
-        #p "code : " + ("&#%s;" % code)
-        #p "hex  : " + code.hex.to_s
-        #p "char : " + @coder.decode("&#%s;" % code.hex.to_s)
+        "&#" + code[1..-1]
       end
     end
     def optional_escape(text)
@@ -265,45 +304,31 @@ module YDocx
         source << File.basename(target)
       end
     end
-    def get_numbering(node)
-      if num_prop = node.xpath('w:pPr//w:numPr').first      
-        if (base = node.xpath('w:basedOn').first) && (base_style = @styles[base['w:val']])
-          indent_level, num_id = get_numbering(base_style)          
-        end
-        if ilvl = num_prop.xpath('w:ilvl').first
-          indent_level = ilvl['w:val'].to_i
-        end
-        if nid = num_prop.xpath('w:numId').first
-          num_id = nid['w:val'].to_i
-        end
-      end
-      return indent_level, num_id
-    end
     def parse_paragraph(node)
       content = []
       if block = parse_block(node)
         content << block
       else # as p
         pos = 0
-        style = node.xpath('w:pPr//w:pStyle').first
-        if style
-          style = @styles[style['w:val']]
+        style_node = node.xpath('w:pPr//w:pStyle').first
+        if style_node
+          style = @styles[style_node['w:val']]
+        else
+          style = Style.new()
         end
-        indent_level, num_id = get_numbering(node)
-        if num_id.nil? && style
-          indent_level, num_id = get_numbering(style)
-        end
-        indent_level ||= 0
+        style = apply_style(style, node)
+        num_id = style.numid
+        indent_level = style.ilvl || 0
         unless num_id.nil?
-          if @numbering_styles[num_id] && style = @numbering_styles[num_id][indent_level]
-            format = style[:format]
-            is_legal = style[:isLgl]
+          if @numbering_styles[num_id] && num_style = @numbering_styles[num_id][indent_level]
+            format = num_style[:format]
+            is_legal = num_style[:isLgl]
             for ilvl in 0..indent_level
-              if style = @numbering_styles[num_id][ilvl]
-                num = style[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
+              if num_style = @numbering_styles[num_id][ilvl]
+                num = num_style[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
                 replace = '%' + (ilvl+1).to_s
                 next if !format.include?(replace)
-                str = case (is_legal and ilvl < indent_level) ? 'decimal' : style[:numFmt]
+                str = case (is_legal and ilvl < indent_level) ? 'decimal' : num_style[:numFmt]
                 when 'decimalZero'
                   sprintf("%02d", num)
                 when 'upperRoman'
@@ -337,31 +362,40 @@ module YDocx
                 @numbering_count[num_id][level] = 0
               end
             end
-            content << format + ' ' unless format == ''
+            unless format == ''
+              content << format + ' '
+            end
           end
         end
+        
         node.xpath('w:r').each do |r|
+          r_style = apply_style(style, r)
           unless r.xpath('w:br').empty?
             content << "<br />"
-          end
-          unless r.xpath('w:t').empty?
-            content << parse_text(r, (pos == 0)) # rm indent
-            pos += 1
-          else
-            unless r.xpath('w:tab').empty?
-              if content.last != @space and pos != 0 # ignore tab at line head
-                content << @space
-                pos += 1
-              end
-            end
-            unless r.xpath('w:sym').empty?
-              code = r.xpath('w:sym').first['w:char'].downcase # w:char
-              content << character_replace(code)
+          end        
+          unless r.xpath('w:tab').empty?
+            if content.last != @space and pos != 0 # ignore tab at line head
+              content << @space
               pos += 1
             end
-            if !r.xpath('w:pict').empty? or !r.xpath('w:drawing').empty?
-              content << parse_image(r)
+          end
+          
+          text = ''
+          if r.xpath('w:t')
+            text = r.xpath('w:t').map(&:text).join('')
+          elsif sym = r.xpath('w:sym').first
+            code = sym['w:char'].downcase
+            text = character_replace(code)
+            if sym['w:font']
+              r_style.font = sym['w:font']
             end
+            pos += 1
+          elsif !r.xpath('w:pict').empty? or !r.xpath('w:drawing').empty?
+            content << parse_image(r)
+          end
+          
+          if !text.empty?
+            content << parse_text(text, r_style, (pos == 0))
           end
         end
       end
@@ -444,23 +478,20 @@ module YDocx
       end
       table
     end
-    def parse_text(r, lstrip=false)
-      text = r.xpath('w:t').map(&:text).join('')
+    def parse_text(text, style, lstrip=false)
       text = character_encode(text)
       text = optional_escape(text)
       text = text.lstrip if lstrip
-      if rpr = r.xpath('w:rPr')
-        text = apply_fonts(rpr, text)
-        text = apply_align(rpr, text)
-        unless rpr.xpath('w:u').empty? || rpr.xpath('w:u').first['w:val'] == '0'
-          text = markup(:span, text, {:style => "text-decoration:underline;"})
-        end
-        unless rpr.xpath('w:i').empty? || rpr.xpath('w:i').first['w:val'] == '0'
-          text = markup(:em, text)
-        end
-        unless rpr.xpath('w:b').empty? || rpr.xpath('w:b').first['w:val'] == '0'
-          text = markup(:strong, text)
-        end
+      text = apply_fonts(style, text)
+      text = apply_align(style, text)
+      if style.u
+        text = markup(:span, text, {:style => "text-decoration:underline;"})
+      end
+      if style.i
+        text = markup(:em, text)
+      end
+      if style.b
+        text = markup(:strong, text)
       end
       text
     end
