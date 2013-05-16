@@ -36,6 +36,10 @@ module YDocx
     def init
     end
     
+    def get_bool(node)
+      return !node.nil? && (node['w:val'].nil? || node['w:val'] == 'true' || node['w:val'] == '1')
+    end
+    
     def extend_style(old_style, new_style)
       style = Style.new()
       new_style.members.each do |key|
@@ -46,6 +50,7 @@ module YDocx
     
     def apply_style(old_style, node)
       style = old_style.dup()
+      
       if numpr = node.at_xpath('w:pPr//w:numPr')
         if ilvl = numpr.at_xpath('w:ilvl')
           style.ilvl = ilvl['w:val'].to_i
@@ -54,20 +59,24 @@ module YDocx
           style.numid = numid['w:val'].to_i
         end
       end
+      
       if rpr = node.at_xpath('w:rPr')
-        if b = rpr.xpath('w:b').first
-          style.b = b['w:val'].nil? || b['w:val'] == '1'
+        if rstyle = rpr.at_xpath('w:rStyle')
+          style = extend_style(style, @styles[rstyle['w:val']])
         end
-        if i = rpr.xpath('w:i').first
-          style.i = i['w:val'].nil? || i['w:val'] == '1'
+        if b = rpr.at_xpath('w:b')
+          style.b = get_bool(b)
         end
-        if u = rpr.xpath('w:u').first
-          style.u = u['w:val'] != 'none'
+        if i = rpr.at_xpath('w:i')
+          style.i = get_bool(i)
         end
-        if valign = rpr.xpath('w:vertAlign').first
+        if u = rpr.at_xpath('w:u')
+          style.u = u['w:val'] != 'none' # TODO there are other types of underlines
+        end
+        if valign = rpr.at_xpath('w:vertAlign')
           style.valign = valign['w:val']
         end
-        if font = rpr.xpath('w:rFonts').first
+        if font = rpr.at_xpath('w:rFonts')
           if !font['w:ascii'].nil?
             style.font = font['w:ascii']
           elsif !font['w:asciiTheme'].nil?
@@ -75,10 +84,10 @@ module YDocx
             style.font = @theme_fonts[theme]
           end
         end
-        if sz = rpr.xpath('w:sz').first
+        if sz = rpr.at_xpath('w:sz')
           style.sz = sz['w:val'].to_i
         end
-        if color = rpr.xpath('w:color').first
+        if color = rpr.at_xpath('w:color')
           style.color = color['w:val']
         end
       end
@@ -140,10 +149,10 @@ module YDocx
                 indent_level = lvl['w:ilvl'].to_i
                 @numbering_count[num_id][indent_level] = 0
                 @numbering_desc[num_id][indent_level] = {
-                  :start  => lvl.xpath('w:start').first['w:val'].to_i,
-                  :numFmt => lvl.xpath('w:numFmt').first['w:val'],
-                  :format => lvl.xpath('w:lvlText').first['w:val'],
-                  :isLgl  => !lvl.xpath('w:isLgl').first.nil?,
+                  :start  => lvl.at_xpath('w:start')['w:val'].to_i,
+                  :numFmt => lvl.at_xpath('w:numFmt')['w:val'],
+                  :format => lvl.at_xpath('w:lvlText')['w:val'],
+                  :isLgl  => get_bool(lvl.at_xpath('w:isLgl')),
                   :style  => apply_style(Style.new(), lvl)
                 }
               end
@@ -151,14 +160,14 @@ module YDocx
           end
           num.xpath('w:lvlOverride').each do |over|
             indent_level = over['w:ilvl'].to_i
-            if start_over = over.xpath('w:startOverride').first
+            if start_over = over.at_xpath('w:startOverride')
               @numbering_desc[num_id][indent_level][:start] = start_over['w:val'].to_i
-            elsif lvl = over.xpath('w:lvl').first
+            elsif lvl = over.at_xpath('w:lvl')
               @numbering_desc[num_id][indent_level] = {
-                :start  => lvl.xpath('w:start').first['w:val'].to_i,
-                :numFmt => lvl.xpath('w:numFmt').first['w:val'],
-                :format => lvl.xpath('w:lvlText').first['w:val'],
-                :isLgl  => !lvl.xpath('w:isLgl').first.nil?,
+                :start  => lvl.at_xpath('w:start')['w:val'].to_i,
+                :numFmt => lvl.at_xpath('w:numFmt')['w:val'],
+                :format => lvl.at_xpath('w:lvlText')['w:val'],
+                :isLgl  => get_bool(lvl.at_xpath('w:isLgl')),
                 :style  => apply_style(Style.new(), lvl)
               }
             end
@@ -269,7 +278,7 @@ module YDocx
         },
       ].each do |element|
         if image = r.xpath(element[:path], ns) and !image.empty?
-          if wrap = r.xpath("#{element[:wrap]}", ns).first
+          if wrap = r.at_xpath("#{element[:wrap]}", ns)
             # TODO
             # wrap handling (currently all wrap off)
             # wrap[element[:type]] has "bothSides", "topAndBottom" and "wrapText"
@@ -312,8 +321,7 @@ module YDocx
         content << block
       else # as p
         pos = 0
-        style_node = node.xpath('w:pPr//w:pStyle').first
-        if style_node
+        if  style_node = node.at_xpath('w:pPr//w:pStyle')
           style = @styles[style_node['w:val']]
         else
           style = @default_style
@@ -419,10 +427,10 @@ module YDocx
         tr.xpath('w:tc').each do |tc|
           tc.xpath('w:tcPr').each do |tcpr|
             cells = 1
-            if span = tcpr.xpath('w:gridSpan').first
+            if span = tcpr.at_xpath('w:gridSpan')
               cells = span['w:val'].to_i
             end
-            if merge = tcpr.xpath('w:vMerge').first
+            if merge = tcpr.at_xpath('w:vMerge')
               if merge['w:val'].nil?
                 vmerge_type[row][col] = 1;
               else
@@ -444,7 +452,7 @@ module YDocx
           show = true
           columns = 1
           tc.xpath('w:tcPr').each do |tcpr|
-            if span = tcpr.xpath('w:gridSpan').first
+            if span = tcpr.at_xpath('w:gridSpan')
               columns = attributes[:colspan] = span['w:val'].to_i
             end
             if vmerge_type[row][col] == 2
@@ -454,7 +462,7 @@ module YDocx
               end
              attributes[:rowspan] = nrow - row
             end
-            if align = tcpr.xpath('w:vAlign').first
+            if align = tcpr.at_xpath('w:vAlign')
               attributes[:valign] = align['w:val']
             else
               attributes[:valign] = 'top'
