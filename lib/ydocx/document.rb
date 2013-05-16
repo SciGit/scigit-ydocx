@@ -126,7 +126,7 @@ module YDocx
       rel_xml.xpath('/').children.each do |relat|
         relat.children.each do |r|
           if file = @zip.find_entry('word/' + r['Target'])
-            rel_files[r['Target']] = file.get_input_stream
+            rel_files[r['Type']] = file.get_input_stream
           end
         end
       end

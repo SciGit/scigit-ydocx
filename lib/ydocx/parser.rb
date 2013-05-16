@@ -7,7 +7,7 @@ require 'ydocx/markup_method'
 require 'roman-numerals'
 
 module YDocx
-  Style = Struct.new(:b, :u, :i, :font, :sz, :valign, :ilvl, :numid)
+  Style = Struct.new(:b, :u, :i, :font, :sz, :color, :valign, :ilvl, :numid)
   class Parser
     include MarkupMethod
     attr_accessor :indecies, :images, :result, :space
@@ -17,6 +17,7 @@ module YDocx
       @rel_files = rel_files
       @style_nodes = {}
       @styles = {}
+      @theme_fonts = {}
       @numbering_desc = {}
       @numbering_count = {}
       @coder = HTMLEntities.new
@@ -53,7 +54,7 @@ module YDocx
           style.numid = numid['w:val'].to_i
         end
       end
-      if rpr = node.xpath('w:rPr').first
+      if rpr = node.at_xpath('w:rPr')
         if b = rpr.xpath('w:b').first
           style.b = b['w:val'].nil? || b['w:val'] == '1'
         end
@@ -67,10 +68,18 @@ module YDocx
           style.valign = valign['w:val']
         end
         if font = rpr.xpath('w:rFonts').first
-          style.font = font['w:ascii']
+          if !font['w:ascii'].nil?
+            style.font = font['w:ascii']
+          elsif !font['w:asciiTheme'].nil?
+            theme = font['w:asciiTheme'][0, 5]
+            style.font = @theme_fonts[theme]
+          end
         end
         if sz = rpr.xpath('w:sz').first
           style.sz = sz['w:val'].to_i
+        end
+        if color = rpr.xpath('w:color').first
+          style.color = color['w:val']
         end
       end
       style
@@ -84,17 +93,30 @@ module YDocx
         if based = node.at_xpath('w:basedOn')
           style = compute_style(based['w:val'])
         else
-          style = Style.new()
+          style = @default_style
         end
         @styles[id] = apply_style(style, node)
       end
     end
     
     def parse
-      if @rel_files.has_key?('styles.xml')
-        style_xml = Nokogiri::XML.parse(@rel_files['styles.xml'])
+      if theme_file = @rel_files.select { |type, file| type =~ /relationships\/theme$/ }.first
+        theme_xml = Nokogiri::XML.parse(theme_file[1])
+        ['major', 'minor'].each do |type|
+          if font = theme_xml.at_xpath('.//a:' + type + 'Font//a:latin')
+            @theme_fonts[type] = font['typeface']
+          end
+        end
+      end
+      
+      if style_file = @rel_files.select { |type, file| type =~ /relationships\/styles$/ }.first
+        style_xml = Nokogiri::XML.parse(style_file[1])
         style_xml.xpath('//w:styles//w:style').each do |style|
           @style_nodes[style['w:styleId']] = style
+        end
+        @default_style = Style.new()
+        if def_style = style_xml.at_xpath('//w:styles//w:docDefaults//w:rPrDefault')
+          @default_style = apply_style(Style.new(), def_style)
         end
       end
       
@@ -102,8 +124,8 @@ module YDocx
         compute_style(id)
       end
       
-      if @rel_files.has_key?('numbering.xml')
-        num_xml = Nokogiri::XML.parse(@rel_files['numbering.xml'])
+      if num_file = @rel_files.select { |type, file| type =~ /relationships\/numbering$/ }.first
+        num_xml = Nokogiri::XML.parse(num_file[1])
         abstract_nums = {}
         num_xml.xpath('//w:numbering//w:abstractNum').each do |abstr|
           abstract_nums[abstr['w:abstractNumId']] = abstr
@@ -159,17 +181,20 @@ module YDocx
     end
     private
     def apply_fonts(style, text)
-      css = ''
+      css = []
       if style.font
-        css += sprintf("font-family: '%s';", style.font)
+        css << sprintf("font-family: '%s'", style.font)
       end
       if style.sz
-        css += sprintf("font-size: %dpt;", style.sz / 2)
+        css << sprintf("font-size: %dpt", style.sz / 2)
+      end
+      if style.color
+        css << sprintf("color: #%s", style.color)
       end
       if css.empty?
         text
       else
-        markup :font, text, {:style => css}
+        markup :font, text, {:style => css.join("; ")}
       end
     end
     def apply_align(style, text)
@@ -291,7 +316,7 @@ module YDocx
         if style_node
           style = @styles[style_node['w:val']]
         else
-          style = Style.new()
+          style = @default_style
         end
         style = apply_style(style, node)
         num_id = style.numid
@@ -356,10 +381,11 @@ module YDocx
               if t.name == 'br'
                 text += "\n"
               elsif t.name == 'tab'
-                text += "\t"
+                text += "        "
               elsif t.name == 't'
                 text += t.text
               elsif t.name == 'sym'
+                text += t.text
                 val = t['w:char'].to_i(16)
                 if val >= 0xf000
                   val -= 0xf000
