@@ -7,7 +7,7 @@ require 'ydocx/markup_method'
 require 'roman-numerals'
 
 module YDocx
-  Style = Struct.new(:b, :u, :i, :font, :sz, :color, :valign, :ilvl, :numid)
+  Style = Struct.new(:b, :u, :i, :strike, :font, :sz, :color, :valign, :ilvl, :numid)
   class Parser
     include MarkupMethod
     attr_accessor :indecies, :images, :result, :space
@@ -69,6 +69,12 @@ module YDocx
         end
         if i = rpr.at_xpath('w:i')
           style.i = get_bool(i)
+        end
+        if strike = rpr.at_xpath('w:strike')
+          style.strike = get_bool(strike)
+        end
+        if !style.strike && (dstrike = rpr.at_xpath('w:dstrike'))
+          style.strike = get_bool(dstrike)
         end
         if u = rpr.at_xpath('w:u')
           style.u = u['w:val'] != 'none' # TODO there are other types of underlines
@@ -189,7 +195,7 @@ module YDocx
       @result
     end
     private
-    def apply_fonts(style, text)
+    def apply_css(style, text)
       css = []
       if style.font
         css << sprintf("font-family: '%s'", style.font)
@@ -200,10 +206,26 @@ module YDocx
       if style.color
         css << sprintf("color: #%s", style.color)
       end
+      if style.u
+        css << 'text-decoration: underline'
+      end
+      if style.i
+        css << 'font-style: italic'
+      end
+      if style.b
+        css << 'font-weight: bold'
+      end
+      if style.strike
+        if style.u
+          text = markup :span, text, {:style => "text-decoration: line-through"}
+        else
+          css << 'text-decoration: line-through'
+        end
+      end
       if css.empty?
         text
       else
-        markup :font, text, {:style => css.join("; ")}
+        markup :span, text, {:style => css.join("; ")}
       end
     end
     def apply_align(style, text)
@@ -486,17 +508,8 @@ module YDocx
         text = character_encode(text)
         text = escape_whitespace(text)
       end
-      text = apply_fonts(style, text)
+      text = apply_css(style, text)
       text = apply_align(style, text)
-      if style.u
-        text = markup(:span, text, {:style => "text-decoration:underline;"})
-      end
-      if style.i
-        text = markup(:em, text)
-      end
-      if style.b
-        text = markup(:strong, text)
-      end
       text
     end
   end
