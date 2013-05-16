@@ -21,7 +21,6 @@ module YDocx
       @numbering_desc = {}
       @numbering_count = {}
       @coder = HTMLEntities.new
-      @indecies = []
       @images = []
       @result = []
       @space = '&nbsp;'
@@ -118,7 +117,7 @@ module YDocx
       if theme_file = @rel_files.select { |type, file| type =~ /relationships\/theme$/ }.first
         theme_xml = Nokogiri::XML.parse(theme_file[1])
         ['major', 'minor'].each do |type|
-          if font = theme_xml.at_xpath('.//a:' + type + 'Font//a:latin')
+          if font = theme_xml.at_xpath(".//a:#{type}Font//a:latin")
             @theme_fonts[type] = font['typeface']
           end
         end
@@ -269,9 +268,6 @@ module YDocx
       end
       new_text
     end
-    def parse_block(node)
-      nil # default no block element
-    end
     def parse_image(r)
       id = nil
       additional_namespaces = {
@@ -339,99 +335,94 @@ module YDocx
     end
     def parse_paragraph(node)
       content = []
-      if block = parse_block(node)
-        content << block
-      else # as p
-        pos = 0
-        if  style_node = node.at_xpath('w:pPr//w:pStyle')
-          style = @styles[style_node['w:val']]
-        else
-          style = @default_style
-        end
-        style = apply_style(style, node)
-        num_id = style.numid
-        indent_level = style.ilvl || 0
-        unless num_id.nil?
-          if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
-            format = num_desc[:format]
-            is_legal = num_desc[:isLgl]
-            num_style = extend_style(style, num_desc[:style])
-            for ilvl in 0..indent_level
-              if num_desc = @numbering_desc[num_id][ilvl]
-                num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
-                replace = '%' + (ilvl+1).to_s
-                next if !format.include?(replace)
-                str = case (is_legal and ilvl < indent_level) ? 'decimal' : num_desc[:numFmt]
-                when 'decimalZero'
-                  sprintf("%02d", num)
-                when 'upperRoman'
-                  RomanNumerals.to_roman(num)
-                when 'lowerRoman'
-                  RomanNumerals.to_roman(num).downcase
-                when 'upperLetter'
-                  letter = (num-1) % 26
-                  rep = (num-1) / 26 + 1
-                  (letter + 65).chr * rep
-                when 'lowerLetter'
-                  letter = (num-1) % 26
-                  rep = (num-1) / 26 + 1
-                  (letter + 97).chr * rep
-                # todo: idk
-                # when 'ordinal'
-                # when 'cardinalText'
-                # when 'ordinalText'
-                when 'bullet'
-                  '&bull;'
-                else
-                  num.to_s
-                end
-              end
-              format = format.sub(replace, str)
-            end              
-            @numbering_count[num_id][indent_level] += 1
-            # reset higher counts
-            @numbering_count[num_id].each_key do |level|
-              if level > indent_level
-                @numbering_count[num_id][level] = 0
+      if style_node = node.at_xpath('w:pPr//w:pStyle')
+        style = @styles[style_node['w:val']]
+      else
+        style = @default_style
+      end
+      style = apply_style(style, node)
+      num_id = style.numid
+      indent_level = style.ilvl || 0
+      unless num_id.nil?
+        if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
+          format = num_desc[:format]
+          is_legal = num_desc[:isLgl]
+          num_style = extend_style(style, num_desc[:style])
+          for ilvl in 0..indent_level
+            if num_desc = @numbering_desc[num_id][ilvl]
+              num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
+              replace = '%' + (ilvl+1).to_s
+              next if !format.include?(replace)
+              str = case (is_legal and ilvl < indent_level) ? 'decimal' : num_desc[:numFmt]
+              when 'decimalZero'
+                sprintf("%02d", num)
+              when 'upperRoman'
+                RomanNumerals.to_roman(num)
+              when 'lowerRoman'
+                RomanNumerals.to_roman(num).downcase
+              when 'upperLetter'
+                letter = (num-1) % 26
+                rep = (num-1) / 26 + 1
+                (letter + 65).chr * rep
+              when 'lowerLetter'
+                letter = (num-1) % 26
+                rep = (num-1) / 26 + 1
+                (letter + 97).chr * rep
+              # todo: idk
+              # when 'ordinal'
+              # when 'cardinalText'
+              # when 'ordinalText'
+              when 'bullet'
+                '&bull;'
+              else
+                num.to_s
               end
             end
-            unless format == ''
-              content << parse_text(format, num_style) << @space
+            format = format.sub(replace, str)
+          end              
+          @numbering_count[num_id][indent_level] += 1
+          # reset higher counts
+          @numbering_count[num_id].each_key do |level|
+            if level > indent_level
+              @numbering_count[num_id][level] = 0
             end
           end
+          unless format == ''
+            content << parse_text(format, num_style) << @space
+          end
         end
-        
-        node.xpath('.//w:r').each do |r|
-          r_style = apply_style(style, r)
-          if !r.xpath('w:pict').empty? || !r.xpath('w:drawing').empty?
-            content << parse_image(r)
-          else
-            text = ''
-            r.children.each do |t|
-              if t.name == 'br'
-                text += "\n"
-              elsif t.name == 'tab'
-                text += "        "
-              elsif t.name == 't'
-                text += t.text
-              elsif t.name == 'sym'
-                text += t.text
-                val = t['w:char'].to_i(16)
-                if val >= 0xf000
-                  val -= 0xf000
-                end
-                chr_style = r_style.dup()
-                if t['w:font']
-                  chr_style.font = t['w:font']
-                end
-                content << parse_text(text, r_style)
-                content << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
-                text = ''
+      end
+      
+      node.xpath('.//w:r').each do |r|
+        r_style = apply_style(style, r)
+        if !r.xpath('w:pict').empty? || !r.xpath('w:drawing').empty?
+          content << parse_image(r)
+        else
+          text = ''
+          r.children.each do |t|
+            if t.name == 'br'
+              text += "\n"
+            elsif t.name == 'tab'
+              text += "        "
+            elsif t.name == 't'
+              text += t.text
+            elsif t.name == 'sym'
+              text += t.text
+              val = t['w:char'].to_i(16)
+              if val >= 0xf000
+                val -= 0xf000
               end
-            end
-            unless text.empty?
+              chr_style = r_style.dup()
+              if t['w:font']
+                chr_style.font = t['w:font']
+              end
               content << parse_text(text, r_style)
+              content << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
+              text = ''
             end
+          end
+          unless text.empty?
+            content << parse_text(text, r_style)
           end
         end
       end

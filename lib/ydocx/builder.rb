@@ -8,15 +8,9 @@ require 'ydocx/markup_method'
 module YDocx
   class Builder
     include MarkupMethod
-    attr_accessor :contents, :container, :indecies, :references,
-                  :block, :files, :style, :title
+    attr_accessor :contents, :files, :style, :title
     def initialize(contents)
       @contents = contents
-      @container = {}
-      @indecies = []
-      @references = []
-      @block = :div
-      @block_class = nil
       @files = Pathname.new('.')
       @style = false
       @title = ''
@@ -30,15 +24,6 @@ module YDocx
     def build_html
       contents = @contents
       body = compile(contents, :html)
-      if @container.has_key?(:content)
-        body = build_tag(@container[:tag], body, @container[:attributes])
-      end
-      if before = build_before_content
-        body = build_tag(before[:tag], before[:content], before[:attributes]) << body
-      end
-      if after = build_after_content
-        body << build_tag(after[:tag], after[:content], after[:attributes])
-      end
       builder = Nokogiri::HTML::Builder.new do |doc|
         doc.html {
           doc.head {
@@ -64,26 +49,10 @@ module YDocx
     def compile(contents, mode)
       result = ''
       headings = 0
-      block_start = (@block_class ? "<#{@block} class='#{@block_class}'>" : "<#{@block}>")
-      block_close = "</#{@block}>"
       contents.each do |element|
-        if element[:tag].to_s =~ /^h[1-9]$/ # block
-          if headings == 0
-            result << block_start
-          else
-            result << "#{block_close}#{block_start}"
-          end
-          headings += 1
-        end
         result << build_tag(element[:tag], element[:content], element[:attributes], mode)
       end
-      result << block_close
-    end
-    def build_after_content
-      nil
-    end
-    def build_before_content
-      nil
+      result
     end
     def build_tag(tag, content, attributes, mode=:html)
       if tag == :br and mode != :xml
