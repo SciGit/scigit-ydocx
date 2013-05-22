@@ -96,6 +96,29 @@ module YDocx
       @align = align
       @runs = []
     end
+    def merge_runs
+      # merge adjacent runs with identical formatting.
+      @new_runs = []
+      cur_text = ''
+      cur_style = Style.new
+      i = 0
+      while i < @runs.length
+        if !@runs[i].is_a?(Run)
+          i += 1
+          @new_runs << @runs[i]
+        else
+          j = i + 1
+          text = @runs[i].text.dup
+          while j < @runs.length && @runs[j].is_a?(Run) && (@runs[j].style == @runs[i].style || @runs[j].text == '<br />')
+            text << @runs[j].text
+            j += 1
+          end
+          @new_runs << Run.new(text, @runs[i].style)
+          i = j
+        end
+      end
+      @runs = @new_runs
+    end
     def to_markup
       res = []
       @runs.each do |run|
@@ -107,10 +130,12 @@ module YDocx
   
   class Cell
     include MarkupMethod
-    attr_accessor :rowspan, :colspan, :valign, :blocks
-    def initialize(rowspan=1, colspan=1, valign='top')
+    attr_accessor :rowspan, :colspan, :height, :width, :valign, :blocks
+    def initialize(rowspan=1, colspan=1, height=nil, width=nil, valign='top')
       @rowspan = rowspan
       @colspan = colspan
+      @height = height
+      @width = width
       @valign = valign
       @blocks = []
     end
@@ -119,10 +144,17 @@ module YDocx
       @blocks.each do |block|
         contents << block.to_markup
       end
+      css = ["vertical-align: #{@valign}"]
+      if height
+        css << "height: #{@height}"
+      end
+      if width
+        css << "width: #{@width}"
+      end
       markup :td, contents, {
         :rowspan => @rowspan,
         :colspan => @colspan,
-        :valign => @valign
+        :style => css.join('; ')
       }
     end
   end
@@ -161,7 +193,7 @@ module YDocx
   end
   
   class Parser
-    attr_accessor :indecies, :images, :result, :space
+    attr_accessor :images, :result, :space
     def initialize(doc, rel, rel_files)
       @doc = Nokogiri::XML.parse(doc)
       @rel = Nokogiri::XML.parse(rel)
@@ -542,6 +574,7 @@ module YDocx
       if jc = node.at_xpath('w:pPr//w:jc')
         paragraph.align = jc['w:val']
       end
+      paragraph.merge_runs
       paragraph
     end
     def parse_table(node)
@@ -573,14 +606,22 @@ module YDocx
       end
       
       node.xpath('w:tr').each_with_index do |tr, row|
+        row_height = nil
+        if trh = tr.at_xpath('w:trPr//w:trHeight')
+          row_height = trh['w:val'].to_i * 96 / 1440
+        end
         table.cells << []
         col = 0
         tr.xpath('w:tc').each do |tc|
           cell = Cell.new
+          cell.height = row_height
           columns = 1
           if tcpr = tc.at_xpath('w:tcPr')
             if span = tcpr.at_xpath('w:gridSpan')
               columns = cell.colspan = span['w:val'].to_i
+            end
+            if w = tcpr.at_xpath('w:tcW')
+              cell.width = w['w:w'].to_i * 96 / 1440
             end
             if vmerge_type[row][col] == 2
               nrow = row + 1
@@ -609,7 +650,9 @@ module YDocx
         text = character_encode(text)
         text = escape_whitespace(text)
       end
-      Run.new text, style
+      text_style = style.dup
+      text_style.ilvl = text_style.numid = nil
+      Run.new text, text_style
     end
   end
 end
