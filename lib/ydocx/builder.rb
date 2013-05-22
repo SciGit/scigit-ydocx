@@ -22,8 +22,7 @@ module YDocx
     def init
     end
     def build_html
-      contents = @contents
-      body = compile(contents, :html)
+      body = compile(@contents, :html)
       builder = Nokogiri::HTML::Builder.new do |doc|
         doc.html {
           doc.head {
@@ -48,8 +47,7 @@ module YDocx
     private
     def compile(contents, mode)
       result = ''
-      headings = 0
-      contents.each do |element|
+      contents.to_markup.each do |element|
         result << build_tag(element[:tag], element[:content], element[:attributes], mode)
       end
       result

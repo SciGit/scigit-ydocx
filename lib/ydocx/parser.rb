@@ -7,9 +7,160 @@ require 'ydocx/markup_method'
 require 'roman-numerals'
 
 module YDocx
-  Style = Struct.new(:b, :u, :i, :strike, :font, :sz, :color, :valign, :ilvl, :numid)
-  class Parser
+  Style = Struct.new(:b, :u, :i, :strike, :caps, :smallCaps, :font, :sz, :color, :valign, :ilvl, :numid)
+
+  class Image
     include MarkupMethod
+    attr_accessor :height, :width, :src, :wrap
+    def initialize(height=nil, width=nil, src=nil, wrap='inline')
+      @height = height
+      @width = width
+      @src = src
+      @wrap = wrap
+    end
+    def to_markup
+      attributes = {}
+      style = ['display: ' + @wrap]
+      if @height
+        style << "height: #{@height}"
+        style << "width: #{@width}"
+      end
+      attributes[:style] = style.join('; ')
+      if @src
+        attributes[:src] = @src
+      else
+        attributes[:alt] = 'Unknown image'
+      end
+      markup :img, '', attributes
+    end
+  end
+  
+  class Run
+    include MarkupMethod
+    attr_accessor :text, :style
+    def initialize(text, style=Style.new)
+      @text = text
+      @style = style
+    end
+    def to_markup
+      css = []
+      text = @text
+      if @style.font
+        css << sprintf("font-family: '%s'", @style.font)
+      end
+      if @style.sz
+        css << sprintf("font-size: %dpt", @style.sz / 2)
+      end
+      if @style.color
+        css << sprintf("color: #%s", @style.color)
+      end
+      if @style.u
+        css << 'text-decoration: underline'
+      end
+      if @style.i
+        css << 'font-style: italic'
+      end
+      if @style.b
+        css << 'font-weight: bold'
+      end
+      if @style.caps
+        css << 'text-transform: uppercase'
+      end
+      if @style.smallCaps
+        css << 'font-variant: small-caps'
+      end
+      if @style.strike
+        if @style.u
+          text = markup :span, text, {:style => "text-decoration: line-through"}
+        else
+          css << 'text-decoration: line-through'
+        end
+      end
+      if @style.valign == 'subscript'
+        text = markup :sub, text
+      elsif @style.valign == 'superscript'
+        text = markup :sup, text
+      end
+      if css.empty?
+        text
+      else
+        markup :span, text, {:style => css.join("; ")}
+      end
+    end
+  end
+  
+  class Paragraph
+    include MarkupMethod
+    attr_accessor :runs, :align
+    def initialize(align='left')
+      @align = align
+      @runs = []
+    end
+    def to_markup
+      res = []
+      @runs.each do |run|
+        res << run.to_markup
+      end
+      markup :p, res, {:align => @align}
+    end
+  end
+  
+  class Cell
+    include MarkupMethod
+    attr_accessor :rowspan, :colspan, :valign, :blocks
+    def initialize(rowspan=1, colspan=1, valign='top')
+      @rowspan = rowspan
+      @colspan = colspan
+      @valign = valign
+      @blocks = []
+    end
+    def to_markup
+      contents = []
+      @blocks.each do |block|
+        contents << block.to_markup
+      end
+      markup :td, contents, {
+        :rowspan => @rowspan,
+        :colspan => @colspan,
+        :valign => @valign
+      }
+    end
+  end
+  
+  class Table
+    include MarkupMethod
+    attr_accessor :cells
+    def initialize
+      @cells = []
+    end
+    def to_markup
+      rows = []
+      @cells.each do |row|
+        cells = []
+        row.each do |cell|
+          cells << cell.to_markup
+        end
+        rows << markup(:tr, cells)
+      end
+      markup :table, rows
+    end
+  end
+  
+  class ParsedDocument
+    attr_accessor :blocks
+    def initialize
+      @blocks = []
+    end
+    def to_markup
+      body = []
+      @blocks.each do |block|
+        body << block.to_markup
+      end
+      body
+    end
+  end
+  
+  class Parser
     attr_accessor :indecies, :images, :result, :space
     def initialize(doc, rel, rel_files)
       @doc = Nokogiri::XML.parse(doc)
@@ -22,7 +173,7 @@ module YDocx
       @numbering_count = {}
       @coder = HTMLEntities.new
       @images = []
-      @result = []
+      @result = ParsedDocument.new
       @space = '&nbsp;'
       @image_path = 'images'
       @image_style = ''
@@ -63,14 +214,10 @@ module YDocx
         if rstyle = rpr.at_xpath('w:rStyle')
           style = extend_style(style, @styles[rstyle['w:val']])
         end
-        if b = rpr.at_xpath('w:b')
-          style.b = get_bool(b)
-        end
-        if i = rpr.at_xpath('w:i')
-          style.i = get_bool(i)
-        end
-        if strike = rpr.at_xpath('w:strike')
-          style.strike = get_bool(strike)
+        [:b, :i, :strike, :caps, :smallCaps].each do |mod|
+          if modnode = rpr.at_xpath('w:' + mod.to_s)
+            style[mod] = get_bool(modnode)
+          end
         end
         if !style.strike && (dstrike = rpr.at_xpath('w:dstrike'))
           style.strike = get_bool(dstrike)
@@ -182,64 +329,19 @@ module YDocx
       @doc.xpath('//w:document//w:body').children.map do |node|
         case node.node_name
         when 'text'
-          @result << parse_paragraph(node)
+          @result.blocks << parse_paragraph(node)
         when 'tbl'
-          @result << parse_table(node)
+          @result.blocks << parse_table(node)
         when 'p'
-          @result << parse_paragraph(node)
+          @result.blocks << parse_paragraph(node)
         else
           # skip
         end
       end
       @result
     end
-    private
-    def apply_css(style, text)
-      css = []
-      if style.font
-        css << sprintf("font-family: '%s'", style.font)
-      end
-      if style.sz
-        css << sprintf("font-size: %dpt", style.sz / 2)
-      end
-      if style.color
-        css << sprintf("color: #%s", style.color)
-      end
-      if style.u
-        css << 'text-decoration: underline'
-      end
-      if style.i
-        css << 'font-style: italic'
-      end
-      if style.b
-        css << 'font-weight: bold'
-      end
-      if style.strike
-        if style.u
-          text = markup :span, text, {:style => "text-decoration: line-through"}
-        else
-          css << 'text-decoration: line-through'
-        end
-      end
-      if css.empty?
-        text
-      else
-        markup :span, text, {:style => css.join("; ")}
-      end
-    end
-    def apply_align(style, text)
-      if style.valign == 'subscript'
-        text = markup(:sub, text)
-      elsif style.valign == 'superscript'
-        if text =~ /^[0-9]$/
-          text = "&sup" + text + ";"
-        else
-          text = markup(:sup, text)
-        end
-      end
-      text
-    end
     
+    private
     def character_encode(text)
       text.force_encoding('utf-8')
       # NOTE
@@ -270,6 +372,7 @@ module YDocx
     end
     def parse_image(r)
       id = nil
+      img = Image.new
       additional_namespaces = {
         'xmlns:a'   => 'http://schemas.openxmlformats.org/drawingml/2006/main',
         'xmlns:pic' => 'http://schemas.openxmlformats.org/drawingml/2006/picture'
@@ -278,31 +381,30 @@ module YDocx
       [
         { # old type shape
           :attr => 'id',
-          :path => 'w:pict//v:shape//v:imagedata',
-          :wrap => 'w:pict//v:shape//w10:wrap',
-          :type => '',
+          :path => './/w:pict//v:shape//v:imagedata',
         },
         { # in anchor
-          :attr => 'embed',
-          :path => 'w:drawing//wp:anchor//a:graphic//a:graphicData//pic:pic//pic:blipFill//a:blip',
-          :wrap => 'w:drawing//wp:anchor//wp:wrapTight',
-          :type => 'wrapText',
+          :attr => 'r:embed',
+          :path => './/w:drawing//wp:anchor',
         },
-        { # stand alone
-          :attr => 'embed',
-          :path => 'w:drawing//a:graphic//a:graphicData//pic:pic//pic:blipFill//a:blip',
-          :wrap => 'w:drawing//wp:wrapTight',
-          :type => 'wrapText',
+        { # inline
+          :attr => 'r:embed',
+          :path => './/w:drawing//wp:inline',
         },
       ].each do |element|
-        if image = r.xpath(element[:path], ns) and !image.empty?
-          if wrap = r.at_xpath("#{element[:wrap]}", ns)
-            # TODO
-            # wrap handling (currently all wrap off)
-            # wrap[element[:type]] has "bothSides", "topAndBottom" and "wrapText"
-            @image_style = 'display:block;'
+        if image = r.at_xpath(element[:path], ns)
+          if wrap = image.at_xpath('wp:wrapTopAndBottom', ns)
+            img.wrap = 'block'
           end
-          (id = image.first[element[:attr].to_s]) && break
+          if size = image.at_xpath('wp:extent', ns)
+            img.width = size['cx'].to_i / 9525
+            img.height = size['cy'].to_i / 9525
+          end
+          if blip = image.at_xpath('a:graphic//a:graphicData//pic:pic//pic:blipFill//a:blip', ns)
+            image = blip
+          end
+          id = image[element[:attr]]
+          break
         end
       end
       if id
@@ -315,14 +417,13 @@ module YDocx
                 :origin => target,
                 :source => source
               }
-              attributes = {:src => source}
-              attributes.merge!({:style => @image_style}) unless @image_style.empty?
-              return markup :img, [], attributes
+              img.src = source
+              break
             end
           end
         end
       end
-      nil
+      img
     end
     def source_path(target)
       source = @image_path + '/'
@@ -334,7 +435,7 @@ module YDocx
       end
     end
     def parse_paragraph(node)
-      content = []
+      paragraph = Paragraph.new
       if style_node = node.at_xpath('w:pPr//w:pStyle')
         style = @styles[style_node['w:val']]
       else
@@ -347,7 +448,12 @@ module YDocx
         if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
           format = num_desc[:format]
           is_legal = num_desc[:isLgl]
-          num_style = extend_style(style, num_desc[:style])
+          num_style = style.dup()
+          # It seems that text size from pPr.rPr applies to numbering in some cases...
+          if sz = node.at_xpath('w:pPr//w:rPr//w:sz')
+            num_style[:sz] = sz['w:val'].to_i
+          end
+          num_style = extend_style(num_style, num_desc[:style])
           for ilvl in 0..indent_level
             if num_desc = @numbering_desc[num_id][ilvl]
               num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
@@ -388,16 +494,23 @@ module YDocx
             end
           end
           unless format == ''
-            content << parse_text(format, num_style) << @space
+            paragraph.runs << parse_text(format + ' ', num_style)
           end
         end
       end
       
-      node.xpath('.//w:r').each do |r|
-        r_style = apply_style(style, r)
-        if !r.xpath('w:pict').empty? || !r.xpath('w:drawing').empty?
-          content << parse_image(r)
-        else
+      node.children.each do |child|
+        if !child.xpath('.//w:pict').empty? || !child.xpath('.//w:drawing').empty?
+          paragraph.runs << parse_image(child)
+          next
+        end
+        # take care of things like smarttags (which contain runs)
+        runs = child.xpath('.//w:r')
+        if child.name == 'r'
+          runs << child
+        end
+        runs.each do |r|
+          r_style = apply_style(style, r)
           text = ''
           r.children.each do |t|
             if t.name == 'br'
@@ -416,21 +529,23 @@ module YDocx
               if t['w:font']
                 chr_style.font = t['w:font']
               end
-              content << parse_text(text, r_style)
-              content << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
+              paragraph.runs << parse_text(text, r_style)
+              paragraph.runs << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
               text = ''
             end
           end
           unless text.empty?
-            content << parse_text(text, r_style)
+            paragraph.runs << parse_text(text, r_style)
           end
         end
       end
-      content.compact!
-      markup :p, content
+      if jc = node.at_xpath('w:pPr//w:jc')
+        paragraph.align = jc['w:val']
+      end
+      paragraph
     end
     def parse_table(node)
-      table = markup :table
+      table = Table.new
       
       vmerge_type = {}
       # first, compute rowspans
@@ -458,39 +573,34 @@ module YDocx
       end
       
       node.xpath('w:tr').each_with_index do |tr, row|
-        cells = markup :tr
+        table.cells << []
         col = 0
         tr.xpath('w:tc').each do |tc|
-          attributes = {}
-          show = true
+          cell = Cell.new
           columns = 1
-          tc.xpath('w:tcPr').each do |tcpr|
+          if tcpr = tc.at_xpath('w:tcPr')
             if span = tcpr.at_xpath('w:gridSpan')
-              columns = attributes[:colspan] = span['w:val'].to_i
+              columns = cell.colspan = span['w:val'].to_i
             end
             if vmerge_type[row][col] == 2
               nrow = row + 1
               while !vmerge_type[nrow].nil? and vmerge_type[nrow][col] == 1
                 nrow += 1
               end
-             attributes[:rowspan] = nrow - row
+             cell.rowspan = nrow - row
             end
             if align = tcpr.at_xpath('w:vAlign')
-              attributes[:valign] = align['w:val']
-            else
-              attributes[:valign] = 'top'
+              cell.valign = align['w:val']
             end
           end
-          cell = markup :td, [], attributes
           tc.xpath('w:p').each do |p|
-            cell[:content] << parse_paragraph(p)
+            cell.blocks << parse_paragraph(p)
           end
           if vmerge_type[row][col] != 1
-            cells[:content] << cell
+            table.cells[row] << cell
           end
           col += columns
         end
-        table[:content] << cells
       end
       table
     end
@@ -499,9 +609,7 @@ module YDocx
         text = character_encode(text)
         text = escape_whitespace(text)
       end
-      text = apply_css(style, text)
-      text = apply_align(style, text)
-      text
+      Run.new text, style
     end
   end
 end

@@ -14,15 +14,14 @@ require 'ydocx/builder'
 module YDocx
   class Document
     attr_reader :builder,:contents, :images, :parser, :path
-    def self.open(file, options={})
-      self.new(file, options)
+    def self.open(file)
+      self.new(file)
     end
-    def initialize(file, options={})
+    def initialize(file)
       @parser = nil
       @builder = nil
       @contents = nil
       @images = []
-      @options = options
       @path = Pathname.new('.')
       @files = nil
       @zip = nil
@@ -37,14 +36,15 @@ module YDocx
     def output_file(ext)
       @path.sub_ext(".#{ext.to_s}")
     end
-    def to_html(output=false, options={})
+    def to_html(output=false)
+      #puts @contents.to_s
+      #return
       html = ''
-      options = @options.merge(options)
       files = output_directory
       @builder = Builder.new(@contents) do |builder|
         builder.title = @path.basename
         builder.files = files.relative_path_from(files.dirname)
-        builder.style = options[:style] if options.has_key?(:style)
+        builder.style = true
         html = builder.build_html
       end
       if output
@@ -56,9 +56,8 @@ module YDocx
       end
       html
     end
-    def to_xml(output=false, options={})
+    def to_xml(output=false)
       xml = ''
-      options = @options.merge(options)
       Builder.new(@contents) do |builder|
         xml = builder.build_xml
       end
@@ -122,6 +121,7 @@ module YDocx
           end
         end
       end
+      rel = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
       @parser = Parser.new(doc, rel, rel_files) do |parser|
         @contents = parser.parse
         @images = parser.images
