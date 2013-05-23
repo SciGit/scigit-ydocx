@@ -3,7 +3,7 @@
 
 require 'pathname'
 require 'zip/zip'
-require 'rmagick'
+require 'RMagick'
 require 'ydocx/parser'
 require 'ydocx/builder'
 

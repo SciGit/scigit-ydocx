@@ -5,7 +5,7 @@ require 'nokogiri'
 require 'htmlentities'
 require 'ydocx/markup_method'
 require 'roman-numerals'
-require 'rmagick'
+require 'RMagick'
 
 module YDocx
   Style = Struct.new(:b, :u, :i, :strike, :caps, :smallCaps, :font, :sz, :color, :valign, :ilvl, :numid)
@@ -138,7 +138,7 @@ module YDocx
         else
           j = i + 1
           text = @runs[i].text.dup
-          while j < @runs.length && @runs[j].is_a?(Run) && (@runs[j].style == @runs[i].style || @runs[j].text == '<br />')
+          while j < @runs.length && @runs[j].is_a?(Run) && (@runs[j].style == @runs[i].style || @runs[j].text == "\n")
             text << @runs[j].text
             j += 1
           end
