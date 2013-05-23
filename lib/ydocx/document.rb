@@ -3,11 +3,7 @@
 
 require 'pathname'
 require 'zip/zip'
-begin
-  #require 'RMagick'
-rescue LoadError
-  warn "Couldn't load RMagick: .wmf conversion off"
-end
+require 'rmagick'
 require 'ydocx/parser'
 require 'ydocx/builder'
 
@@ -87,15 +83,15 @@ module YDocx
     def organize_image(origin_path, source_path)
       binary = @zip.find_entry("word/#{origin_path}").get_input_stream
       if source_path.extname != origin_path.extname # convert
+        output_file = output_directory.join(source_path)
+        output_file.open('wb') do |f|
+          f.puts binary.read
+        end
         if defined? Magick::Image
-          image = Magick::Image.from_blob(binary.read).first
+          image = Magick::Image.read(output_file).first
           image.format = source_path.extname[1..-1].upcase
           output_directory.join(source_path).open('wb') do |f|
             f.puts image.to_blob
-          end
-        else # copy original image
-          output_directory.join(dir, origin_path.basename).open('wb') do |f|
-            f.puts binary.read
           end
         end
       else
