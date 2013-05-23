@@ -10,8 +10,29 @@ require 'rmagick'
 module YDocx
   Style = Struct.new(:b, :u, :i, :strike, :caps, :smallCaps, :font, :sz, :color, :valign, :ilvl, :numid)
 
-  class Image
+  class DocumentElement
+   private
+    attr_accessor :hash
+   public
     include MarkupMethod
+    def reset_hash
+      @hash = nil
+    end
+    def hash
+      unless @hash.nil?
+        vals = []
+        instance_variables.each do |var|
+          if var != "@hash"
+            vals << instance_variable_get(var)
+          end
+        end
+        @hash = vals.hash
+      end
+      @hash
+    end
+  end
+  
+  class Image < DocumentElement
     attr_accessor :height, :width, :src, :wrap
     def initialize(height=nil, width=nil, src=nil, wrap='inline')
       @height = height
@@ -36,10 +57,9 @@ module YDocx
     end
   end
   
-  class Run
-    include MarkupMethod
+  class Run < DocumentElement
     attr_accessor :text, :style
-    def initialize(text, style=Style.new)
+    def initialize(text='', style=Style.new)
       @text = text
       @style = style
     end
@@ -88,10 +108,12 @@ module YDocx
         markup :span, text, {:style => css.join("; ")}
       end
     end
+    def hash
+      [@text, @style.hash].hash
+    end
   end
   
-  class Paragraph
-    include MarkupMethod
+  class Paragraph < DocumentElement
     attr_accessor :runs, :align
     def initialize(align='left')
       @align = align
@@ -127,10 +149,12 @@ module YDocx
       end
       markup :p, res, {:align => @align}
     end
+    def hash
+      [@runs.hash, @align].hash
+    end
   end
   
-  class Cell
-    include MarkupMethod
+  class Cell < DocumentElement
     attr_accessor :rowspan, :colspan, :height, :width, :valign, :blocks
     def initialize(rowspan=1, colspan=1, height=nil, width=nil, valign='top')
       @rowspan = rowspan
@@ -160,8 +184,7 @@ module YDocx
     end
   end
   
-  class Table
-    include MarkupMethod
+  class Table < DocumentElement
     attr_accessor :cells
     def initialize
       @cells = []
@@ -179,7 +202,7 @@ module YDocx
     end
   end
   
-  class ParsedDocument
+  class ParsedDocument < DocumentElement
     attr_accessor :blocks
     def initialize
       @blocks = []
@@ -207,7 +230,6 @@ module YDocx
       @coder = HTMLEntities.new
       @images = []
       @result = ParsedDocument.new
-      @space = '&nbsp;'
       @image_path = 'images'
       @image_style = ''
       init
@@ -374,34 +396,13 @@ module YDocx
       @result
     end
     
-    private
+   private
     def character_encode(text)
       text.force_encoding('utf-8')
       # NOTE
       # :named only for escape at Builder
       text = @coder.encode(text, :named)
       text
-    end
-    def escape_whitespace(text)
-      prev_ws = true
-      new_text = ''
-      text.each_char do |c|
-        if c == "\n"
-          new_text += "<br />"
-          prev_ws = true
-        elsif c =~ /[[:space:]]/
-          if prev_ws
-            new_text += @space
-          else
-            new_text += c
-          end
-          prev_ws = true
-        else  
-          new_text += c
-          prev_ws = false
-        end
-      end
-      new_text
     end
     def parse_image(r)
       id = nil
@@ -649,7 +650,6 @@ module YDocx
     def parse_text(text, style, raw = false)
       unless raw
         text = character_encode(text)
-        text = escape_whitespace(text)
       end
       text_style = style.dup
       text_style.ilvl = text_style.numid = nil

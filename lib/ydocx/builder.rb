@@ -52,6 +52,27 @@ module YDocx
       end
       result
     end
+    def escape_whitespace(text)
+      prev_ws = true
+      new_text = ''
+      text.each_char do |c|
+        if c == "\n"
+          new_text += "<br />"
+          prev_ws = true
+        elsif c =~ /[[:space:]]/
+          if prev_ws
+            new_text += "&nbsp;"
+          else
+            new_text += c
+          end
+          prev_ws = true
+        else  
+          new_text += c
+          prev_ws = false
+        end
+      end
+      new_text
+    end
     def build_tag(tag, content, attributes, mode=:html)
       if tag == :br and mode != :xml
         return "<br/>"
@@ -71,7 +92,7 @@ module YDocx
       elsif content.is_a? Hash
         _content = build_tag(content[:tag], content[:content], content[:attributes], mode)
       elsif content.is_a? String
-        _content = content
+        _content = (mode == :html ? escape_whitespace(content) : content)
       end
       _tag = tag.to_s
       _attributes = ''
