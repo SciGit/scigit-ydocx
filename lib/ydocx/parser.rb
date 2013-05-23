@@ -15,11 +15,17 @@ module YDocx
     attr_accessor :hash
    public
     include MarkupMethod
+    def ==(elem)
+      hash == elem.hash
+    end
+    def eql?(elem)
+      hash == elem.hash
+    end
     def reset_hash
       @hash = nil
     end
     def hash
-      unless @hash.nil?
+      if @hash.nil?
         vals = []
         instance_variables.each do |var|
           if var != "@hash"
@@ -33,7 +39,7 @@ module YDocx
   end
   
   class Image < DocumentElement
-    attr_accessor :height, :width, :src, :wrap
+    attr_accessor :height, :width, :src, :wrap, :img_hash
     def initialize(height=nil, width=nil, src=nil, wrap='inline')
       @height = height
       @width = width
@@ -316,8 +322,8 @@ module YDocx
     end
     
     def parse
-      if theme_file = @rel_files.select { |type, file| type =~ /relationships\/theme$/ }.first
-        theme_xml = Nokogiri::XML.parse(theme_file[1])
+      if theme_file = @rel_files.select { |file| file[:type] =~ /relationships\/theme$/ }.first
+        theme_xml = Nokogiri::XML.parse(theme_file[:stream])
         ['major', 'minor'].each do |type|
           if font = theme_xml.at_xpath(".//a:#{type}Font//a:latin")
             @theme_fonts[type] = font['typeface']
@@ -325,8 +331,8 @@ module YDocx
         end
       end
       
-      if style_file = @rel_files.select { |type, file| type =~ /relationships\/styles$/ }.first
-        style_xml = Nokogiri::XML.parse(style_file[1])
+      if style_file = @rel_files.select { |file| file[:type] =~ /relationships\/styles$/ }.first
+        style_xml = Nokogiri::XML.parse(style_file[:stream])
         style_xml.xpath('//w:styles//w:style').each do |style|
           @style_nodes[style['w:styleId']] = style
         end
@@ -340,8 +346,8 @@ module YDocx
         compute_style(id)
       end
       
-      if num_file = @rel_files.select { |type, file| type =~ /relationships\/numbering$/ }.first
-        num_xml = Nokogiri::XML.parse(num_file[1])
+      if num_file = @rel_files.select { |file| file[:type] =~ /relationships\/numbering$/ }.first
+        num_xml = Nokogiri::XML.parse(num_file[:stream])
         abstract_nums = {}
         num_xml.xpath('//w:numbering//w:abstractNum').each do |abstr|
           abstract_nums[abstr['w:abstractNumId']] = abstr
@@ -437,24 +443,24 @@ module YDocx
           if blip = image.at_xpath('a:graphic//a:graphicData//pic:pic//pic:blipFill//a:blip', ns)
             image = blip
           end
-          id = image[element[:attr]]
-          break
-        end
-      end
-      if id
-        @rel.xpath('/').children.each do |rel|
-          rel.children.each do |r|
-            if r['Id'] == id and r['Target']
-              target = r['Target']
+          id = image[element[:attr]]              
+          if id
+            if file = @rel_files.select{ |file| file[:id] == id }.first
+              target = file[:target]
               source = source_path(target)
+              data = file[:stream].read
               @images << {
                 :origin => target,
-                :source => source
+                :source => source,
+                :data => data,
               }
               img.src = source
-              break
+              img.img_hash = data.hash
             end
+          else
+            img.img_hash = image.to_s.hash
           end
+          break
         end
       end
       img
@@ -462,7 +468,7 @@ module YDocx
     def source_path(target)
       source = @image_path + '/'
       if defined? Magick::Image and
-         ext = File.extname(target).match(/\.wmf$/).to_a[0]
+         ext = File.extname(target).match(/\.(w|e)mf$/).to_a[0] # EMF may not work outside of windows!
         source << File.basename(target, ext) + '.png'
       else
         source << File.basename(target)
@@ -575,6 +581,9 @@ module YDocx
       end
       if jc = node.at_xpath('w:pPr//w:jc')
         paragraph.align = jc['w:val']
+        if paragraph.align == 'both'
+          paragraph.align = 'justify'
+        end
       end
       paragraph.merge_runs
       paragraph

@@ -53,6 +53,31 @@ Usage: #{self.command} file [options]
           end
         end
       end
+      def run_diff
+        argv = ARGV.dup
+        if argv.empty? or argv[0] =~ @@help
+          self.help
+        elsif argv[0] =~ @@version
+          self.version
+        elsif argv.length != 2
+          self.error "Please provide 2 files to diff"
+        else
+          files = []
+          argv.each do |file|
+            path = File.expand_path(file)
+            if !File.exist?(path)
+              self.error "#{self.command}: cannot open #{file}: No such file"
+            elsif !File.extname(path).match(/^\.docx$/)
+              self.error "#{self.command}: cannot open #{file}: Not a docx file"
+            else
+              files << path
+            end
+          end
+          docs = files.map do |file|
+            puts YDocx::Document.open(file).contents.hash
+          end
+        end
+      end
       def version
         puts "#{self.command}: version #{VERSION}"
         exit
