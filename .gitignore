@@ -1,1 +1,5 @@
 pkg
+*.html
+*.png
+*.wmf
+*.emf

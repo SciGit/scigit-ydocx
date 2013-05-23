@@ -8,5 +8,10 @@ if $0 == __FILE__
 end
 
 require 'ydocx/command'
+require 'ruby-prof'
 
+#RubyProf.start
 YDocx::Command.run(:to_html)
+#result = RubyProf.stop
+#printer = RubyProf::GraphHtmlPrinter.new(result)
+#printer.print(STDOUT)

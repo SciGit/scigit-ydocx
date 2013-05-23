@@ -30,7 +30,6 @@ Usage: #{self.command} file [options]
       end
       def report(action, path)
         puts "#{self.command}: generated #{File.expand_path(path)}"
-        exit
       end
       def run(action=:to_html)
         argv = ARGV.dup

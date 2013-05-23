@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+# coding: utf-8
+
+if $0 == __FILE__
+  require 'pathname'
+  root = Pathname.new(__FILE__).realpath.parent.parent
+  $:.unshift root.join('lib')
+end
+
+require 'ydocx/command'
+
+YDocx::Command.run_diff

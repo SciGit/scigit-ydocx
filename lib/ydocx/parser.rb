@@ -262,46 +262,52 @@ module YDocx
     def apply_style(old_style, node)
       style = old_style.dup()
       
-      if numpr = node.at_xpath('w:pPr//w:numPr')
-        if ilvl = numpr.at_xpath('w:ilvl')
-          style.ilvl = ilvl['w:val'].to_i
-        end
-        if numid = numpr.at_xpath('w:numId')
-          style.numid = numid['w:val'].to_i
-        end
-      end
-      
-      if rpr = node.at_xpath('w:rPr')
-        if rstyle = rpr.at_xpath('w:rStyle')
-          style = extend_style(style, @styles[rstyle['w:val']])
-        end
-        [:b, :i, :strike, :caps, :smallCaps].each do |mod|
-          if modnode = rpr.at_xpath('w:' + mod.to_s)
-            style[mod] = get_bool(modnode)
+      node.children.each do |prop|
+        if prop.name == 'pPr'
+          if numpr = node.at_xpath('w:numPr')
+            numpr.children.each do |child|
+              if child.name == 'ilvl'
+                style.ilvl = child['w:val'].to_i
+              end
+              if child.name == 'numId'
+                style.numid = child['w:val'].to_i
+              end
+            end
           end
         end
-        if !style.strike && (dstrike = rpr.at_xpath('w:dstrike'))
-          style.strike = get_bool(dstrike)
-        end
-        if u = rpr.at_xpath('w:u')
-          style.u = u['w:val'] != 'none' # TODO there are other types of underlines
-        end
-        if valign = rpr.at_xpath('w:vertAlign')
-          style.valign = valign['w:val']
-        end
-        if font = rpr.at_xpath('w:rFonts')
-          if !font['w:ascii'].nil?
-            style.font = font['w:ascii']
-          elsif !font['w:asciiTheme'].nil?
-            theme = font['w:asciiTheme'][0, 5]
-            style.font = @theme_fonts[theme]
+        
+        if prop.name == 'rPr'
+          prop.children.each do |child|
+            if child.name == 'rStyle'
+              style = extend_style(style, @styles[child['w:val']])
+            end
+            if ['b', 'i', 'caps', 'smallCaps'].include? child.name
+              style[child.name] = get_bool(child)
+            end
+            if !style.strike && (child.name == 'strike' || child.name == 'dstrike')
+              style.strike = get_bool(child)
+            end
+            if child.name == 'u'
+              style.u = child['w:val'] != 'none' # TODO there are other types of underlines
+            end
+            if child.name == 'vertAlign'
+              style.valign = child['w:val']
+            end
+            if child.name == 'rFonts'
+              if !child['w:ascii'].nil?
+                style.font = child['w:ascii']
+              elsif !child['w:asciiTheme'].nil?
+                theme = child['w:asciiTheme'][0, 5]
+                style.font = @theme_fonts[theme]
+              end
+            end
+            if child.name == 'sz'
+              style.sz = child['w:val'].to_i
+            end
+            if child.name == 'color'
+              style.color = child['w:val']
+            end
           end
-        end
-        if sz = rpr.at_xpath('w:sz')
-          style.sz = sz['w:val'].to_i
-        end
-        if color = rpr.at_xpath('w:color')
-          style.color = color['w:val']
         end
       end
       style
@@ -476,10 +482,19 @@ module YDocx
     end
     def parse_paragraph(node)
       paragraph = Paragraph.new
-      if style_node = node.at_xpath('w:pPr//w:pStyle')
-        style = @styles[style_node['w:val']]
-      else
-        style = @default_style
+      style = @default_style
+      if ppr = node.at_xpath('w:pPr')
+        ppr.children.each do |child|
+          if child.name == 'jc'
+            paragraph.align = child['w:val']
+            if paragraph.align == 'both'
+              paragraph.align = 'justify'
+            end
+          end
+          if child.name == 'pStyle'
+            style = @styles[child['w:val']]
+          end
+        end
       end
       style = apply_style(style, node)
       num_id = style.numid
@@ -540,12 +555,19 @@ module YDocx
       end
       
       node.children.each do |child|
-        if !child.xpath('.//w:pict').empty? || !child.xpath('.//w:drawing').empty?
+        has_image = false
+        runs = []
+        child.xpath('.//w:pict|.//w:drawing|.//w:r').each do |run|
+          if run.name == 'pict' || run.name == 'drawing'
+            has_image = true
+          elsif run.name == 'r'
+            runs << run
+          end
+        end
+        if has_image
           paragraph.runs << parse_image(child)
           next
         end
-        # take care of things like smarttags (which contain runs)
-        runs = child.xpath('.//w:r')
         if child.name == 'r'
           runs << child
         end
@@ -579,12 +601,7 @@ module YDocx
           end
         end
       end
-      if jc = node.at_xpath('w:pPr//w:jc')
-        paragraph.align = jc['w:val']
-        if paragraph.align == 'both'
-          paragraph.align = 'justify'
-        end
-      end
+      
       paragraph.merge_runs
       paragraph
     end
