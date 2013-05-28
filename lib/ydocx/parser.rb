@@ -18,6 +18,9 @@ module YDocx
     def ==(elem)
       hash == elem.hash
     end
+    def !=(elem)
+      hash != elem.hash
+    end
     def eql?(elem)
       hash == elem.hash
     end
@@ -46,6 +49,9 @@ module YDocx
       @src = src
       @wrap = wrap
     end
+    def length
+      1
+    end
     def to_markup
       attributes = {}
       style = ['display: ' + @wrap]
@@ -61,6 +67,9 @@ module YDocx
       end
       markup :img, '', attributes
     end
+    def hash
+      [@height, @width, @wrap, @img_hash].hash
+    end
   end
   
   class Run < DocumentElement
@@ -68,6 +77,9 @@ module YDocx
     def initialize(text='', style=Style.new)
       @text = text
       @style = style
+    end
+    def length
+      text.length
     end
     def to_markup
       css = []
@@ -114,6 +126,9 @@ module YDocx
         markup :span, text, {:style => css.join("; ")}
       end
     end
+    def to_s
+      '"' + @text + '"'
+    end
     def hash
       [@text, @style.hash].hash
     end
@@ -124,6 +139,11 @@ module YDocx
     def initialize(align='left')
       @align = align
       @runs = []
+    end
+    def length
+      sum = 0
+      runs.each { |r| sum += r.length }
+      sum
     end
     def merge_runs
       # merge adjacent runs with identical formatting.
@@ -148,6 +168,49 @@ module YDocx
       end
       @runs = @new_runs
     end
+    def get_type(char)
+      if char == ' '
+        :space
+      elsif char == "\n"
+        :newline
+      else
+        :word
+      end
+    end
+    def get_chunks
+      @chunks if @chunks
+      # get chunks of words, newlines, and contiguous spaces; each chunk may have multiple runs
+      cur_chunk = []
+      cur_text = ''
+      cur_type = nil
+      chunks = []
+      @runs.each do |run|
+        if run.is_a? Run
+          run.text.each_char do |c|
+            if cur_type.nil? || (cur_type != :newline && get_type(c) == cur_type)
+              cur_text += c
+            else
+              cur_chunk << Run.new(cur_text, (cur_type == :newline ? Style.new : run.style))
+              chunks << cur_chunk
+              cur_chunk = []
+              cur_text = c
+            end
+            cur_type = get_type(c)
+          end
+        elsif run.is_a? Image
+          chunks << cur_chunk unless cur_chunk.empty?
+          chunks << [run]
+          cur_chunk = []
+        end
+        unless cur_text.empty?
+          cur_chunk << Run.new(cur_text, run.style)
+          cur_text = ''
+          cur_type = nil
+        end
+      end
+      chunks << cur_chunk unless cur_chunk.empty?
+      @chunks = chunks
+    end
     def to_markup
       res = []
       @runs.each do |run|
@@ -155,13 +218,16 @@ module YDocx
       end
       markup :p, res, {:align => @align}
     end
+    def to_s
+      @runs.to_s
+    end
     def hash
       [@runs.hash, @align].hash
     end
   end
   
   class Cell < DocumentElement
-    attr_accessor :rowspan, :colspan, :height, :width, :valign, :blocks
+    attr_accessor :rowspan, :colspan, :height, :width, :valign, :class, :blocks
     def initialize(rowspan=1, colspan=1, height=nil, width=nil, valign='top')
       @rowspan = rowspan
       @colspan = colspan
@@ -183,6 +249,7 @@ module YDocx
         css << "width: #{@width}"
       end
       markup :td, contents, {
+        :class => @class,
         :rowspan => @rowspan,
         :colspan => @colspan,
         :style => css.join('; ')
@@ -224,7 +291,7 @@ module YDocx
   
   class Parser
     attr_accessor :images, :result, :space
-    def initialize(doc, rel, rel_files)
+    def initialize(doc, rel, rel_files, output_dir)
       @doc = Nokogiri::XML.parse(doc)
       @rel = Nokogiri::XML.parse(rel)
       @rel_files = rel_files
@@ -235,6 +302,7 @@ module YDocx
       @numbering_count = {}
       @coder = HTMLEntities.new
       @images = []
+      @output_dir = output_dir
       @result = ParsedDocument.new
       @image_path = 'images'
       @image_style = ''
@@ -460,7 +528,7 @@ module YDocx
                 :source => source,
                 :data => data,
               }
-              img.src = source
+              img.src = @output_dir.join(source)
               img.img_hash = data.hash
             end
           else

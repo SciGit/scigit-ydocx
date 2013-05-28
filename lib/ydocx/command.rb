@@ -2,6 +2,7 @@
 # encoding: utf-8
 
 require 'ydocx'
+require 'ydocx/differ'
 
 module YDocx
   class Command
@@ -72,9 +73,8 @@ Usage: #{self.command} file [options]
               files << path
             end
           end
-          docs = files.map do |file|
-            puts YDocx::Document.open(file).contents.hash
-          end
+          docs = files.map { |f| YDocx::Document.open(f) }
+          puts YDocx::Differ.diff(*docs)
         end
       end
       def version

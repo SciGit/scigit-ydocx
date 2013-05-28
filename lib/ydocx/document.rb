@@ -37,7 +37,6 @@ module YDocx
       files = output_directory
       @builder = Builder.new(@contents) do |builder|
         builder.title = @path.basename
-        builder.files = files.relative_path_from(files.dirname)
         builder.style = true
         html = builder.build_html
       end
@@ -64,7 +63,6 @@ module YDocx
       end
       xml
     end
-    private
     def create_files
       files_dir = output_directory
       mkdir Pathname.new(files_dir) unless files_dir.exist?
@@ -76,6 +74,7 @@ module YDocx
         organize_image(origin_path, source_path, image[:data])
       end
     end
+   private
     def organize_image(origin_path, source_path, data)
       if source_path.extname != origin_path.extname # convert
         output_file = output_directory.join(source_path)
@@ -118,7 +117,7 @@ module YDocx
         end
       end
       rel = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
-      @parser = Parser.new(doc, rel, rel_files) do |parser|
+      @parser = Parser.new(doc, rel, rel_files, output_directory) do |parser|
         @contents = parser.parse
         @images = parser.images
       end

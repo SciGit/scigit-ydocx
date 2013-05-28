@@ -8,10 +8,9 @@ require 'ydocx/markup_method'
 module YDocx
   class Builder
     include MarkupMethod
-    attr_accessor :contents, :files, :style, :title
+    attr_accessor :contents, :style, :title
     def initialize(contents)
       @contents = contents
-      @files = Pathname.new('.')
       @style = false
       @title = ''
       init
@@ -99,11 +98,7 @@ module YDocx
       unless attributes.empty?
         attributes.each_pair do |key, value|
           next if mode == :xml and key.to_s =~ /(id|style|colspan)/u
-          if tag == :img and key == :src
-            _attributes << " src=\"#{resolve_path(value.to_s)}\""
-          else
-            _attributes << " #{key.to_s}=\"#{value.to_s}\""
-          end
+          _attributes << " #{key.to_s}=\"#{value.to_s}\""
         end
       end
       if mode == :xml
@@ -135,11 +130,17 @@ table {
 td {
   padding: 5px 10px;
 }
+td.add {
+  background: rgba(124,252,0,0.3);
+}
+td.delete {
+  background: rgba(255,0,0,0.1);
+}
+td.modify {
+  background: rgba(0,0,255,0.1);
+}
       CSS
       style.gsub(/\s\s+|\n/, ' ')
-    end
-    def resolve_path(path)
-      @files.join path
     end
   end
 end
