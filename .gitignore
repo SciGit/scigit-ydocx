@@ -4,3 +4,4 @@ pkg
 *.wmf
 *.emf
 ~*
+*_files
