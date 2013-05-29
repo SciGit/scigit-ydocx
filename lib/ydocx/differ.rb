@@ -191,9 +191,9 @@ module YDocx
                   p.runs += chunk
                 end
               end
-              p.runs << group unless group.runs.empty?
-              row[i].blocks << p
             end
+            p.runs << group unless group.runs.empty?
+            row[i].blocks << p
           end
         else
           row[0].blocks = block[0]
