@@ -17,9 +17,7 @@ module YDocx
         chunk.join('')
       end
     end
-    def self.chunk_similarity(chunk1, chunk2)
-      text1 = chunk1.map { |c| get_text(c) }
-      text2 = chunk2.map { |c| get_text(c) }
+    def self.text_similarity(text1, text2)
       # Find the LCS between the runs
       lcs = Diff::LCS.LCS(text1, text2)
       lcs_len = 0
@@ -36,12 +34,15 @@ module YDocx
         return 2.0 * lcs_len / tlen
       end
     end
+    def self.chunk_similarity(chunk1, chunk2)
+      text_similarity(chunk1.map(&method(:get_text)), chunk2.map(&method(:get_text)))
+    end
     # Return the % similarity between two blocks (paragraphs, tables)
-    def self.block_similarity(block1, block2)
+    def self.block_similarity(block1, text1, block2, text2)
       if block1.class != block2.class
         return 0
       end
-      chunk_similarity(block1.get_chunks, block2.get_chunks)      
+      text_similarity(text1, text2)
     end
     def self.get_chunks(paragraphs)
       chunks = []
@@ -59,17 +60,23 @@ module YDocx
       # Do an n^2 LCS diff on the blocks.
       n = blocks1.length
       m = blocks2.length
+      
+      puts 'Extracting text...'
+      text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
+      text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
+      
+      puts 'Computing paragraph diffs...'
       lcs = Array.new(n+1) { Array.new(m+1, 0) }
       action = Array.new(n+1) { Array.new(m+1, -1) }
       blocks1.reverse.each_with_index do |a, ii|
         blocks2.reverse.each_with_index do |b, jj|
-          if n*m > 1000
-            sim = (a == b ? 1 : 0)
-          else
-            sim = block_similarity(a, b)
-          end
           i = n-1-ii
           j = m-1-jj
+          if n*m > 100000
+            sim = (a == b ? 1 : 0)
+          else
+            sim = block_similarity(a, text1[i], b, text2[j])
+          end
           # printf "%d %d = %d\n", i, j, sim
           lcs[i][j] = lcs[i+1][j]
           action[i][j] = 0
@@ -83,6 +90,8 @@ module YDocx
           end
         end
       end
+      
+      puts 'Lining up paragraphs...'
       i = 0
       j = 0
       lblocks = []
@@ -122,6 +131,7 @@ module YDocx
         end
       end
       
+      puts 'Computing block diffs...'
       table = Table.new
       diff_blocks.each do |block|
         row = [Cell.new, Cell.new]

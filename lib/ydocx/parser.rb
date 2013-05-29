@@ -181,7 +181,6 @@ module YDocx
       end
     end
     def get_chunks
-      @chunks if @chunks
       # get chunks of words, newlines, and contiguous spaces; each chunk may have multiple runs
       cur_chunk = []
       cur_text = ''
@@ -211,7 +210,7 @@ module YDocx
         end
       end
       chunks << cur_chunk unless cur_chunk.empty?
-      @chunks = chunks
+      chunks
     end
     def to_markup
       markup :p, @runs.map { |run| run.to_markup }, {:align => @align}

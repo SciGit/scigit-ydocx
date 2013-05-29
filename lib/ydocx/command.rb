@@ -73,8 +73,12 @@ Usage: #{self.command} file [options]
               files << path
             end
           end
+          STDOUT.sync = true
+          puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f) }
-          puts YDocx::Differ.diff(*docs)
+          f = File.new("diff.html", "w")
+          f.write YDocx::Differ.diff(*docs)
+          f.close
         end
       end
       def version
