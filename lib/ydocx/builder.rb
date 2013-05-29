@@ -140,13 +140,17 @@ td.modify {
   background: rgba(0,0,255,0.1);
 }
 span.add {
-  background: rgba(124,252,0,0.3);
+  background: rgba(124,252,0,0.5);
 }
 span.delete {
-  background: rgba(255,0,0,0.1);
+  background: rgb(255,180,180);
 }
 span.modify {
-  background: rgba(0,0,255,0.1);
+  background: rgb(200, 200, 255);
+}
+.modify img {
+  background: rgb(200, 200, 255);
+  border: 2px solid rgb(200, 200, 255);
 }
       CSS
       style.gsub(/\s\s+|\n/, ' ')

@@ -13,6 +13,7 @@ module YDocx
   class DocumentElement
    private
     attr_accessor :hash
+    @@ignored_variables = []
    public
     include MarkupMethod
     def ==(elem)
@@ -31,7 +32,7 @@ module YDocx
       if @hash.nil?
         vals = []
         instance_variables.each do |var|
-          if var != "@hash"
+          if var != :@hash && !@@ignored_variables.include?(var)
             vals << instance_variable_get(var)
           end
         end
@@ -43,6 +44,7 @@ module YDocx
   
   class Image < DocumentElement
     attr_accessor :height, :width, :src, :wrap, :img_hash
+    @@ignored_variables = [:@src]
     def initialize(height=nil, width=nil, src=nil, wrap='inline')
       @height = height
       @width = width
@@ -63,9 +65,6 @@ module YDocx
         attributes[:alt] = 'Unknown image'
       end
       markup :img, '', attributes
-    end
-    def hash
-      [@height, @width, @wrap, @img_hash].hash
     end
   end
   
@@ -126,9 +125,6 @@ module YDocx
     def to_s
       '"' + @text + '"'
     end
-    def hash
-      [@text, @style.hash].hash
-    end
   end
   
   class RunGroup < DocumentElement
@@ -154,13 +150,13 @@ module YDocx
     end
     def merge_runs
       # merge adjacent runs with identical formatting.
-      @new_runs = []
+      new_runs = []
       cur_text = ''
       cur_style = Style.new
       i = 0
       while i < @runs.length
         if !@runs[i].is_a?(Run)
-          @new_runs << @runs[i]
+          new_runs << @runs[i]
           i += 1
         else
           j = i + 1
@@ -169,11 +165,11 @@ module YDocx
             text << @runs[j].text
             j += 1
           end
-          @new_runs << Run.new(text, @runs[i].style)
+          new_runs << Run.new(text, @runs[i].style)
           i = j
         end
       end
-      @runs = @new_runs
+      @runs = new_runs
     end
     def get_type(char)
       if char == ' '
@@ -223,13 +219,12 @@ module YDocx
     def to_s
       @runs.to_s
     end
-    def hash
-      [@runs.hash, @align].hash
-    end
   end
   
   class Cell < DocumentElement
-    attr_accessor :rowspan, :colspan, :height, :width, :valign, :class, :blocks
+    attr_accessor :rowspan, :colspan, :height, :width, :valign, :blocks
+    attr_accessor :class, :row, :col, :parent
+    @@ignored_variables = [:@class, :@parent]
     def initialize(rowspan=1, colspan=1, height=nil, width=nil, valign='top')
       @rowspan = rowspan
       @colspan = colspan
@@ -274,6 +269,9 @@ module YDocx
         rows << markup(:tr, cells)
       end
       markup :table, rows
+    end
+    def get_chunks
+      @cells.flatten.map { |c| [c] }
     end
   end
   
@@ -712,7 +710,10 @@ module YDocx
         col = 0
         tr.xpath('w:tc').each do |tc|
           cell = Cell.new
+          cell.parent = table
           cell.height = row_height
+          cell.row = row
+          cell.col = col
           columns = 1
           if tcpr = tc.at_xpath('w:tcPr')
             if span = tcpr.at_xpath('w:gridSpan')
@@ -732,8 +733,17 @@ module YDocx
               cell.valign = align['w:val']
             end
           end
-          tc.xpath('w:p').each do |p|
-            cell.blocks << parse_paragraph(p)
+          tc.children.each do |child|
+            case child.name
+            when 'text'
+              cell.blocks << parse_paragraph(child)
+            when 'tbl'
+              cell.blocks << parse_table(child)
+            when 'p'
+              cell.blocks << parse_paragraph(child)
+            else
+              # skip
+            end
           end
           if vmerge_type[row][col] != 1
             table.cells[row] << cell

@@ -11,6 +11,8 @@ module YDocx
         ''
       elsif chunk[0].is_a? Image
         [chunk[0].img_hash]
+      elsif chunk[0].is_a? Cell
+        [chunk[0].blocks.hash]
       else
         chunk.join('')
       end
@@ -39,13 +41,7 @@ module YDocx
       if block1.class != block2.class
         return 0
       end
-      if block1.is_a? Paragraph
-        chunk_similarity(block1.get_chunks, block2.get_chunks)
-      elsif block1.is_a? Table
-        return 1
-      else
-        return 0
-      end
+      chunk_similarity(block1.get_chunks, block2.get_chunks)      
     end
     def self.get_chunks(paragraphs)
       chunks = []
@@ -148,38 +144,56 @@ module YDocx
           
           for i in 0..1
             p = Paragraph.new
-            group = RunGroup.new          
+            group = RunGroup.new
+            prev_table = nil
             chunks[i].each_with_index do |chunk, j|
-              if changed[i][j]
-                if changed[i][j] == 2
-                  group.class = 'modify'
-                elsif i == 0
-                  group.class = 'delete'
-                else
-                  group.class = 'add'
+              if chunk[0].is_a?(Cell)
+                if changed[i][j]
+                  if changed[i][j] == 2
+                    chunk[0].class = 'modify'
+                  elsif i == 0
+                    chunk[0].class = 'delete'
+                  else
+                    chunk[0].class = 'add'
+                  end
                 end
-                if chunk == [Run.new("\n")]
-                  group.runs << Run.new("&crarr;\n")
-                elsif chunk == [Run.new("\r")]
-                  row[i].blocks << p
-                  p.runs << group
-                  group = RunGroup.new
-                  p = Paragraph.new
-                else
-                  group.runs += chunk
+                if chunk[0].parent != prev_table
+                  prev_table = chunk[0].parent
+                  row[i].blocks << prev_table
                 end
               else
-                p.runs << group unless group.runs.empty?
-                group = RunGroup.new
-                if chunk == [Run.new("\r")]
-                  row[i].blocks << p
-                  p = Paragraph.new
+                if changed[i][j]
+                  if changed[i][j] == 2
+                    group.class = 'modify'
+                  elsif i == 0
+                    group.class = 'delete'
+                  else
+                    group.class = 'add'
+                  end
+                  if chunk == [Run.new("\n")]
+                    group.runs << Run.new("&crarr;\n")
+                  elsif chunk == [Run.new("\r")] 
+                    group.runs << Run.new("&para;")
+                    row[i].blocks << p
+                    p.runs << group
+                    group = RunGroup.new
+                    p = Paragraph.new
+                  else
+                    group.runs += chunk
+                  end
+                else
+                  p.runs << group unless group.runs.empty?
+                  group = RunGroup.new
+                  if chunk == [Run.new("\r")]
+                    row[i].blocks << p
+                    p = Paragraph.new
+                  end
+                  p.runs += chunk
                 end
-                p.runs += chunk
               end
+              p.runs << group unless group.runs.empty?
+              row[i].blocks << p
             end
-            p.runs << group unless group.runs.empty?
-            row[i].blocks << p
           end
         else
           row[0].blocks = block[0]
