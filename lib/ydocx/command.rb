@@ -29,6 +29,15 @@ Usage: #{self.command} file [options]
         puts banner
         exit
       end
+      def help_diff
+        banner = <<-BANNER
+Usage: #{self.command} file1 file2 output_file [options]
+  -h, --help      Display this help message.
+  -v, --version   Show version.
+        BANNER
+        puts banner
+        exit
+      end
       def report(action, path)
         puts "#{self.command}: generated #{File.expand_path(path)}"
       end
@@ -56,14 +65,14 @@ Usage: #{self.command} file [options]
       def run_diff
         argv = ARGV.dup
         if argv.empty? or argv[0] =~ @@help
-          self.help
+          self.help_diff
         elsif argv[0] =~ @@version
           self.version
-        elsif argv.length != 2
-          self.error "Please provide 2 files to diff"
+        elsif argv.length != 3
+          self.help_diff
         else
           files = []
-          argv.each do |file|
+          argv[0..1].each do |file|
             path = File.expand_path(file)
             if !File.exist?(path)
               self.error "#{self.command}: cannot open #{file}: No such file"
@@ -76,7 +85,7 @@ Usage: #{self.command} file [options]
           STDOUT.sync = true
           puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f) }
-          f = File.new("diff.html", "w")
+          f = File.new(argv[2], "w")
           f.write YDocx::Differ.diff(*docs)
           f.close
         end
