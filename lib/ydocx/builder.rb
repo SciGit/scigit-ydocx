@@ -58,9 +58,6 @@ module YDocx
         if c == "\n"
           new_text += "<br />"
           prev_ws = true
-        elsif c == "\r"
-          new_text += "<p />"
-          prev_ws = true
         elsif c =~ /[[:space:]]/
           if prev_ws
             new_text += "&nbsp;"

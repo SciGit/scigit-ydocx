@@ -151,7 +151,6 @@ module YDocx
             group = RunGroup.new          
             chunks[i].each_with_index do |chunk, j|
               if changed[i][j]
-                group.runs += chunk
                 if changed[i][j] == 2
                   group.class = 'modify'
                 elsif i == 0
@@ -159,9 +158,23 @@ module YDocx
                 else
                   group.class = 'add'
                 end
+                if chunk == [Run.new("\n")]
+                  group.runs << Run.new("&crarr;\n")
+                elsif chunk == [Run.new("\r")]
+                  row[i].blocks << p
+                  p.runs << group
+                  group = RunGroup.new
+                  p = Paragraph.new
+                else
+                  group.runs += chunk
+                end
               else
                 p.runs << group unless group.runs.empty?
                 group = RunGroup.new
+                if chunk == [Run.new("\r")]
+                  row[i].blocks << p
+                  p = Paragraph.new
+                end
                 p.runs += chunk
               end
             end
