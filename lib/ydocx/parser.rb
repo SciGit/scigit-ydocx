@@ -49,9 +49,6 @@ module YDocx
       @src = src
       @wrap = wrap
     end
-    def length
-      1
-    end
     def to_markup
       attributes = {}
       style = ['display: ' + @wrap]
@@ -134,6 +131,16 @@ module YDocx
     end
   end
   
+  class RunGroup < DocumentElement
+    attr_accessor :runs, :class
+    def initialize
+      @runs = []
+    end
+    def to_markup
+      markup :span, @runs.map { |r| r.to_markup }, {:class => @class }
+    end
+  end
+  
   class Paragraph < DocumentElement
     attr_accessor :runs, :align
     def initialize(align='left')
@@ -190,8 +197,8 @@ module YDocx
             if cur_type.nil? || (cur_type != :newline && get_type(c) == cur_type)
               cur_text += c
             else
-              cur_chunk << Run.new(cur_text, (cur_type == :newline ? Style.new : run.style))
-              chunks << cur_chunk
+              cur_chunk << Run.new(cur_text, (cur_type == :newline ? Style.new : run.style)) unless cur_text.empty?
+              chunks << cur_chunk unless cur_chunk.empty?
               cur_chunk = []
               cur_text = c
             end
@@ -205,18 +212,13 @@ module YDocx
         unless cur_text.empty?
           cur_chunk << Run.new(cur_text, run.style)
           cur_text = ''
-          cur_type = nil
         end
       end
       chunks << cur_chunk unless cur_chunk.empty?
       @chunks = chunks
     end
     def to_markup
-      res = []
-      @runs.each do |run|
-        res << run.to_markup
-      end
-      markup :p, res, {:align => @align}
+      markup :p, @runs.map { |run| run.to_markup }, {:align => @align}
     end
     def to_s
       @runs.to_s
@@ -332,7 +334,7 @@ module YDocx
       
       node.children.each do |prop|
         if prop.name == 'pPr'
-          if numpr = node.at_xpath('w:numPr')
+          if numpr = prop.at_xpath('w:numPr')
             numpr.children.each do |child|
               if child.name == 'ilvl'
                 style.ilvl = child['w:val'].to_i

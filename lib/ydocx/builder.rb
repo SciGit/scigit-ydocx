@@ -52,11 +52,14 @@ module YDocx
       result
     end
     def escape_whitespace(text)
-      prev_ws = true
+      prev_ws = false
       new_text = ''
       text.each_char do |c|
         if c == "\n"
           new_text += "<br />"
+          prev_ws = true
+        elsif c == "\r"
+          new_text += "<p />"
           prev_ws = true
         elsif c =~ /[[:space:]]/
           if prev_ws
@@ -85,12 +88,12 @@ module YDocx
           if c.is_a? Hash
             _content << build_tag(c[:tag], c[:content], c[:attributes], mode)
           elsif c.is_a? String
-            _content << c.chomp.to_s
+            _content << (mode == :html ? escape_whitespace(c) : c.chomp.to_s)
           end
         end
       elsif content.is_a? Hash
         _content = build_tag(content[:tag], content[:content], content[:attributes], mode)
-      elsif content.is_a? String
+      elsif content.is_a? String        
         _content = (mode == :html ? escape_whitespace(content) : content)
       end
       _tag = tag.to_s
@@ -131,12 +134,21 @@ td {
   padding: 5px 10px;
 }
 td.add {
-  background: rgba(124,252,0,0.3);
+  background: rgba(124,255,0,0.2);
 }
 td.delete {
   background: rgba(255,0,0,0.1);
 }
 td.modify {
+  background: rgba(0,0,255,0.1);
+}
+span.add {
+  background: rgba(124,252,0,0.3);
+}
+span.delete {
+  background: rgba(255,0,0,0.1);
+}
+span.modify {
   background: rgba(0,0,255,0.1);
 }
       CSS

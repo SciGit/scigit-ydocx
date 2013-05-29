@@ -6,9 +6,18 @@ require 'diff/lcs'
 
 module YDocx
   class Differ
+    def self.get_text(chunk)
+      if chunk.empty?
+        ''
+      elsif chunk[0].is_a? Image
+        [chunk[0].img_hash]
+      else
+        chunk.join('')
+      end
+    end
     def self.chunk_similarity(chunk1, chunk2)
-      text1 = chunk1.map { |c| c.join('') }
-      text2 = chunk2.map { |c| c.join('') }
+      text1 = chunk1.map { |c| get_text(c) }
+      text2 = chunk2.map { |c| get_text(c) }
       # Find the LCS between the runs
       lcs = Diff::LCS.LCS(text1, text2)
       lcs_len = 0
@@ -65,6 +74,7 @@ module YDocx
           end
           i = n-1-ii
           j = m-1-jj
+          # printf "%d %d = %d\n", i, j, sim
           lcs[i][j] = lcs[i+1][j]
           action[i][j] = 0
           if lcs[i][j+1] > lcs[i][j]
@@ -95,8 +105,6 @@ module YDocx
                chunk_similarity(get_chunks(lblocks), get_chunks(rblocks)) > 0.5
               diff_blocks << [lblocks.dup, rblocks.dup]
             else
-              puts lblocks.to_s
-              puts rblocks.to_s
               diff_blocks << [lblocks.dup, []]
               diff_blocks << [[], rblocks.dup]
             end
@@ -120,18 +128,51 @@ module YDocx
       
       table = Table.new
       diff_blocks.each do |block|
-        c1 = Cell.new
-        c1.blocks = block[0]
-        c2 = Cell.new
-        c2.blocks = block[1]
+        row = [Cell.new, Cell.new]
         if block[0].empty?
-          c2.class = 'add'
+          row[1].class = 'add'
+          row[1].blocks = block[1]
         elsif block[1].empty?
-          c1.class = 'delete'
+          row[0].class = 'delete'
+          row[0].blocks = block[0]
         elsif block[0] != block[1]
-          c1.class = c2.class = 'modify'
+          row[0].class = row[1].class = 'modify'
+          chunks = [get_chunks(block[0]), get_chunks(block[1])]
+          changed = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
+          Diff::LCS.diff(chunks[0], chunks[1]).each do |diff|
+            count = diff.map { |c| c.action }.uniq.length
+            diff.each do |change|
+              changed[change.action == '-' ? 0 : 1][change.position] = count
+            end
+          end
+          
+          for i in 0..1
+            p = Paragraph.new
+            group = RunGroup.new          
+            chunks[i].each_with_index do |chunk, j|
+              if changed[i][j]
+                group.runs += chunk
+                if changed[i][j] == 2
+                  group.class = 'modify'
+                elsif i == 0
+                  group.class = 'delete'
+                else
+                  group.class = 'add'
+                end
+              else
+                p.runs << group unless group.runs.empty?
+                group = RunGroup.new
+                p.runs += chunk
+              end
+            end
+            p.runs << group unless group.runs.empty?
+            row[i].blocks << p
+          end
+        else
+          row[0].blocks = block[0]
+          row[1].blocks = block[1]
         end
-        table.cells << [c1, c2]
+        table.cells << row
       end
       
       [doc1, doc2].each do |doc|
