@@ -13,7 +13,7 @@ module YDocx
   class DocumentElement
    private
     attr_accessor :hash
-    @@ignored_variables = []
+    @@ignored_variables = [:@src, :@class, :@parent]
    public
     include MarkupMethod
     def ==(elem)
@@ -44,7 +44,6 @@ module YDocx
   
   class Image < DocumentElement
     attr_accessor :height, :width, :src, :wrap, :img_hash
-    @@ignored_variables = [:@src]
     def initialize(height=nil, width=nil, src=nil, wrap='inline')
       @height = height
       @width = width
@@ -223,7 +222,6 @@ module YDocx
   class Cell < DocumentElement
     attr_accessor :rowspan, :colspan, :height, :width, :valign, :blocks
     attr_accessor :class, :row, :col, :parent
-    @@ignored_variables = [:@class, :@parent]
     def initialize(rowspan=1, colspan=1, height=nil, width=nil, valign='top')
       @rowspan = rowspan
       @colspan = colspan
