@@ -123,7 +123,7 @@ module YDocx
       end
     end
     def to_s
-      '"' + @text + '"'
+      @text
     end
   end
   

@@ -54,20 +54,16 @@ module YDocx
       end
       chunks
     end
-    def self.diff(doc1, doc2)
-      blocks1 = doc1.contents.blocks
-      blocks2 = doc2.contents.blocks
-      # Do an n^2 LCS diff on the blocks.
+    def self.get_detail_blocks(blocks1, blocks2)
+      if blocks1.empty? || blocks2.empty?
+        return [[blocks1, blocks2]]
+      end
       n = blocks1.length
       m = blocks2.length
-      
-      puts 'Extracting text...'
-      text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
-      text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
-      
-      puts 'Computing paragraph diffs...'
       lcs = Array.new(n+1) { Array.new(m+1, 0) }
       action = Array.new(n+1) { Array.new(m+1, -1) }
+      text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
+      text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
       blocks1.reverse.each_with_index do |a, ii|
         blocks2.reverse.each_with_index do |b, jj|
           i = n-1-ii
@@ -91,7 +87,6 @@ module YDocx
         end
       end
       
-      puts 'Lining up paragraphs...'
       i = 0
       j = 0
       lblocks = []
@@ -130,86 +125,114 @@ module YDocx
           diff_blocks << [[], rblocks.dup]
         end
       end
+      diff_blocks
+    end
+    def self.diff(doc1, doc2)
+      blocks1 = doc1.contents.blocks
+      blocks2 = doc2.contents.blocks
+      
+      puts 'Extracting text...'
+      text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
+      text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
+      
+      puts 'Computing paragraph diffs...'
+      lblocks = []
+      rblocks = []
+      diff_blocks = []
+      Diff::LCS.sdiff(text1.map(&:hash), text2.map(&:hash)).each do |change|
+        if change.action == '='
+          diff_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
+          diff_blocks << [[blocks1[change.old_position]], [blocks2[change.new_position]]]
+          lblocks = []
+          rblocks = []
+        else
+          lblocks << blocks1[change.old_position] unless change.old_element.nil?
+          rblocks << blocks2[change.new_position] unless change.new_element.nil?
+        end
+      end
+      diff_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
       
       puts 'Computing block diffs...'
       table = Table.new
-      diff_blocks.each do |block|
-        row = [Cell.new, Cell.new]
-        if block[0].empty?
-          row[1].class = 'add'
-          row[1].blocks = block[1]
-        elsif block[1].empty?
-          row[0].class = 'delete'
-          row[0].blocks = block[0]
-        elsif block[0] != block[1]
-          row[0].class = row[1].class = 'modify'
-          chunks = [get_chunks(block[0]), get_chunks(block[1])]
-          changed = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
-          Diff::LCS.diff(chunks[0], chunks[1]).each do |diff|
-            count = diff.map { |c| c.action }.uniq.length
-            diff.each do |change|
-              changed[change.action == '-' ? 0 : 1][change.position] = count
-            end
-          end
-          
-          for i in 0..1
-            p = Paragraph.new
-            group = RunGroup.new
-            prev_table = nil
-            chunks[i].each_with_index do |chunk, j|
-              if chunk[0].is_a?(Cell)
-                if changed[i][j]
-                  if changed[i][j] == 2
-                    chunk[0].class = 'modify'
-                  elsif i == 0
-                    chunk[0].class = 'delete'
-                  else
-                    chunk[0].class = 'add'
-                  end
-                end
-                if chunk[0].parent != prev_table
-                  prev_table = chunk[0].parent
-                  row[i].blocks << prev_table
-                end
-              else
-                if changed[i][j]
-                  if changed[i][j] == 2
-                    group.class = 'modify'
-                  elsif i == 0
-                    group.class = 'delete'
-                  else
-                    group.class = 'add'
-                  end
-                  if chunk == [Run.new("\n")]
-                    group.runs << Run.new("&crarr;\n")
-                  elsif chunk == [Run.new("\r")] 
-                    group.runs << Run.new("&para;")
-                    row[i].blocks << p
-                    p.runs << group
-                    group = RunGroup.new
-                    p = Paragraph.new
-                  else
-                    group.runs += chunk
-                  end
-                else
-                  p.runs << group unless group.runs.empty?
-                  group = RunGroup.new
-                  if chunk == [Run.new("\r")]
-                    row[i].blocks << p
-                    p = Paragraph.new
-                  end
-                  p.runs += chunk
-                end
+      diff_blocks.each do |dblock|
+        get_detail_blocks(dblock[0], dblock[1]).each do |block|
+          row = [Cell.new, Cell.new]
+          if block[0].empty?
+            row[1].class = 'add'
+            row[1].blocks = block[1]
+          elsif block[1].empty?
+            row[0].class = 'delete'
+            row[0].blocks = block[0]
+          elsif block[0] != block[1]
+            row[0].class = row[1].class = 'modify'
+            chunks = [get_chunks(block[0]), get_chunks(block[1])]
+            changed = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
+            Diff::LCS.diff(chunks[0], chunks[1]).each do |diff|
+              count = diff.map { |c| c.action }.uniq.length
+              diff.each do |change|
+                changed[change.action == '-' ? 0 : 1][change.position] = count
               end
             end
-            p.runs << group unless group.runs.empty?
-            row[i].blocks << p
+            
+            for i in 0..1
+              p = Paragraph.new
+              group = RunGroup.new
+              prev_table = nil
+              chunks[i].each_with_index do |chunk, j|
+                if chunk[0].is_a?(Cell)
+                  if changed[i][j]
+                    if changed[i][j] == 2
+                      chunk[0].class = 'modify'
+                    elsif i == 0
+                      chunk[0].class = 'delete'
+                    else
+                      chunk[0].class = 'add'
+                    end
+                  end
+                  if chunk[0].parent != prev_table
+                    prev_table = chunk[0].parent
+                    row[i].blocks << prev_table
+                  end
+                else
+                  if changed[i][j]
+                    if changed[i][j] == 2
+                      group.class = 'modify'
+                    elsif i == 0
+                      group.class = 'delete'
+                    else
+                      group.class = 'add'
+                    end
+                    if chunk == [Run.new("\n")]
+                      group.runs << Run.new("&crarr;\n")
+                    elsif chunk == [Run.new("\r")] 
+                      group.runs << Run.new("&para;")
+                      row[i].blocks << p
+                      p.runs << group
+                      group = RunGroup.new
+                      p = Paragraph.new
+                    else
+                      group.runs += chunk
+                    end
+                  else
+                    p.runs << group unless group.runs.empty?
+                    group = RunGroup.new
+                    if chunk == [Run.new("\r")]
+                      row[i].blocks << p
+                      p = Paragraph.new
+                    end
+                    p.runs += chunk
+                  end
+                end
+              end
+              p.runs << group unless group.runs.empty?
+              row[i].blocks << p
+            end
+          else
+            row[0].blocks = block[0]
+            row[1].blocks = block[1]
           end
-        else
-          row[0].blocks = block[0]
-          row[1].blocks = block[1]
+          table.cells << row
         end
-        table.cells << row
       end
       
       [doc1, doc2].each do |doc|
