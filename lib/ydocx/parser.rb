@@ -711,8 +711,6 @@ module YDocx
           cell = Cell.new
           cell.parent = table
           cell.height = row_height
-          cell.row = row
-          cell.col = col
           columns = 1
           if tcpr = tc.at_xpath('w:tcPr')
             if span = tcpr.at_xpath('w:gridSpan')

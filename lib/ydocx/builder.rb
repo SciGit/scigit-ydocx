@@ -27,7 +27,8 @@ module YDocx
           doc.head {
             doc.meta :charset => 'utf-8'
             doc.title @title
-            doc.style { doc << style } if @style
+            doc.link :rel => 'stylesheet', :type => 'text/css', :href => 'assets/style.css' if @style
+            doc.script :src => 'assets/script.js'
           }
           doc.body { doc << body }
         }
@@ -117,43 +118,6 @@ module YDocx
       else
         return "<#{_tag}#{_attributes}>#{_content}</#{_tag}>"
       end
-    end
-    def style
-      style = <<-CSS
-table, tr, td {
-  border-collapse: collapse;
-  border:          1px solid gray;
-}
-table {
-  margin: 5px 0 5px 0;
-}
-td {
-  padding: 5px 10px;
-}
-td.add {
-  background: rgba(124,255,0,0.2);
-}
-td.delete {
-  background: rgba(255,0,0,0.1);
-}
-td.modify {
-  background: rgba(0,0,255,0.1);
-}
-span.add {
-  background: rgba(124,252,0,0.5);
-}
-span.delete {
-  background: rgb(255,180,180);
-}
-span.modify {
-  background: rgb(200, 200, 255);
-}
-.modify img {
-  background: rgb(200, 200, 255);
-  border: 2px solid rgb(200, 200, 255);
-}
-      CSS
-      style.gsub(/\s\s+|\n/, ' ')
     end
   end
 end

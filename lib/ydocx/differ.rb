@@ -154,6 +154,7 @@ module YDocx
       
       puts 'Computing block diffs...'
       table = Table.new
+      cur_change_id = 1
       diff_blocks.each do |dblock|
         get_detail_blocks(dblock[0], dblock[1]).each do |block|
           row = [Cell.new, Cell.new]
@@ -166,11 +167,17 @@ module YDocx
           elsif block[0] != block[1]
             row[0].class = row[1].class = 'modify'
             chunks = [get_chunks(block[0]), get_chunks(block[1])]
-            changed = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
+            change_id = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
             Diff::LCS.diff(chunks[0], chunks[1]).each do |diff|
               count = diff.map { |c| c.action }.uniq.length
+              if count == 1
+                cid = -1
+              else
+                cid = cur_change_id
+                cur_change_id += 1
+              end
               diff.each do |change|
-                changed[change.action == '-' ? 0 : 1][change.position] = count
+                change_id[change.action == '-' ? 0 : 1][change.position] = cid
               end
             end
             
@@ -180,9 +187,9 @@ module YDocx
               prev_table = nil
               chunks[i].each_with_index do |chunk, j|
                 if chunk[0].is_a?(Cell)
-                  if changed[i][j]
-                    if changed[i][j] == 2
-                      chunk[0].class = 'modify'
+                  if change_id[i][j]
+                    if change_id[i][j] >= 1
+                      chunk[0].class = (sprintf 'modify modify%d', change_id[i][j])
                     elsif i == 0
                       chunk[0].class = 'delete'
                     else
@@ -194,9 +201,9 @@ module YDocx
                     row[i].blocks << prev_table
                   end
                 else
-                  if changed[i][j]
-                    if changed[i][j] == 2
-                      group.class = 'modify'
+                  if change_id[i][j]
+                    if change_id[i][j] >= 1
+                      group.class = (sprintf 'modify modify%d', change_id[i][j])
                     elsif i == 0
                       group.class = 'delete'
                     else
