@@ -302,6 +302,10 @@ module YDocx
       @theme_fonts = {}
       @numbering_desc = {}
       @numbering_count = {}
+      @cur_footnote = 1
+      @footnote_fmt = 'decimal'
+      @cur_endnote = 1
+      @endnote_fmt = 'lowerRoman'
       @coder = HTMLEntities.new
       @images = []
       @output_dir = output_dir
@@ -319,6 +323,33 @@ module YDocx
     
     def get_bool(node)
       return !node.nil? && (node['w:val'].nil? || node['w:val'] == 'true' || node['w:val'] == '1')
+    end
+    
+    def format_number(num, type)
+      case type
+      when 'decimalZero'
+        sprintf("%02d", num)
+      when 'upperRoman'
+        RomanNumerals.to_roman(num)
+      when 'lowerRoman'
+        RomanNumerals.to_roman(num).downcase
+      when 'upperLetter'
+        letter = (num-1) % 26
+        rep = (num-1) / 26 + 1
+        (letter + 65).chr * rep
+      when 'lowerLetter'
+        letter = (num-1) % 26
+        rep = (num-1) / 26 + 1
+        (letter + 97).chr * rep
+      # todo: idk
+      # when 'ordinal'
+      # when 'cardinalText'
+      # when 'ordinalText'
+      when 'bullet'
+        '&bull;'
+      else
+        num.to_s
+      end
     end
     
     def extend_style(old_style, new_style)
@@ -398,6 +429,26 @@ module YDocx
     end
     
     def parse
+      if settings_file = @rel_files.select { |file| file[:type] =~ /relationships\/settings$/ }.first
+        settings_xml = Nokogiri::XML.parse(settings_file[:stream])
+        if fpr = settings_xml.at_xpath('//w:settings//w:footnotePr')
+          if start = fpr.at_xpath('w:numStart')
+            @cur_footnote = start['w:val'].to_i
+          end
+          if fmt = fpr.at_xpath('w:numFmt')
+            @footnote_fmt = fmt['w:val']
+          end
+        end
+        if epr = settings_xml.at_xpath('//w:settings//w:endnotePr')
+          if start = epr.at_xpath('w:numStart')
+            @cur_endnote = start['w:val'].to_i
+          end
+          if fmt = epr.at_xpath('w:numFmt')
+            @endnote_fmt = fmt['w:val']
+          end
+        end
+      end
+    
       if theme_file = @rel_files.select { |file| file[:type] =~ /relationships\/theme$/ }.first
         theme_xml = Nokogiri::XML.parse(theme_file[:stream])
         ['major', 'minor'].each do |type|
@@ -584,30 +635,7 @@ module YDocx
               num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
               replace = '%' + (ilvl+1).to_s
               next if !format.include?(replace)
-              str = case (is_legal and ilvl < indent_level) ? 'decimal' : num_desc[:numFmt]
-              when 'decimalZero'
-                sprintf("%02d", num)
-              when 'upperRoman'
-                RomanNumerals.to_roman(num)
-              when 'lowerRoman'
-                RomanNumerals.to_roman(num).downcase
-              when 'upperLetter'
-                letter = (num-1) % 26
-                rep = (num-1) / 26 + 1
-                (letter + 65).chr * rep
-              when 'lowerLetter'
-                letter = (num-1) % 26
-                rep = (num-1) / 26 + 1
-                (letter + 97).chr * rep
-              # todo: idk
-              # when 'ordinal'
-              # when 'cardinalText'
-              # when 'ordinalText'
-              when 'bullet'
-                '&bull;'
-              else
-                num.to_s
-              end
+              str = format_number(num, (is_legal and ilvl < indent_level) ? 'decimal' : num_desc[:numFmt])
             end
             format = format.sub(replace, str)
           end              
@@ -664,6 +692,14 @@ module YDocx
               paragraph.runs << parse_text(text, r_style)
               paragraph.runs << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
               text = ''
+            elsif t.name == 'footnoteReference' &&
+                  (t['w:customMarkFollows'].nil? || t['w:customMarkFollows'] == 'false')
+              text += format_number(@cur_footnote, @footnote_fmt)
+              @cur_footnote += 1
+            elsif t.name == 'endnoteReference' &&
+                  (t['w:customMarkFollows'].nil? || t['w:customMarkFollows'] == 'false')
+              text += format_number(@cur_endnote, @endnote_fmt)
+              @cur_endnote += 1
             end
           end
           unless text.empty?
