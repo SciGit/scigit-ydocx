@@ -6,7 +6,10 @@ require 'diff/lcs'
 
 module YDocx
   class Differ
-    def self.get_text(chunk)
+    def initialize
+      @cur_change_id = 1
+    end
+    def get_text(chunk)
       if chunk.empty?
         ''
       elsif chunk[0].is_a? Image
@@ -17,7 +20,7 @@ module YDocx
         chunk.join('')
       end
     end
-    def self.text_similarity(text1, text2)
+    def text_similarity(text1, text2)
       # Find the LCS between the runs
       lcs = Diff::LCS.LCS(text1, text2)
       lcs_len = 0
@@ -35,13 +38,13 @@ module YDocx
       end
     end
     # Return the % similarity between two blocks (paragraphs, tables)
-    def self.block_similarity(block1, text1, block2, text2)
+    def block_similarity(block1, text1, block2, text2)
       if block1.class != block2.class
         return 0
       end
       text_similarity(text1, text2)
     end
-    def self.get_detail_blocks(blocks1, blocks2)
+    def get_detail_blocks(blocks1, blocks2)
       n = blocks1.length
       m = blocks2.length
       if n == 0 || m == 0
@@ -112,7 +115,87 @@ module YDocx
       end
       diff_blocks
     end
-    def self.diff(doc1, doc2)
+    def get_diff_change_array(list1, list2)
+      change_id = [Array.new(list1.length), Array.new(list2.length)]
+      Diff::LCS.diff(list1, list2).each do |diff|
+        count = diff.map { |c| c.action }.uniq.length
+        if count == 1
+          cid = -1
+        else
+          cid = @cur_change_id
+          @cur_change_id += 1
+        end
+        diff.each do |change|
+          change_id[change.action == '-' ? 0 : 1][change.position] = cid
+        end
+      end
+      change_id
+    end
+    def get_paragraph_diff(p1, p2, result)
+      chunks = [p1.get_chunks, p2.get_chunks]
+      change_id = get_diff_change_array(chunks[0], chunks[1])
+      
+      for i in 0..1
+        p = Paragraph.new
+        p.align = [p1,p2][i].align
+        group = RunGroup.new
+        prev_table = nil
+        chunks[i].each_with_index do |chunk, j|
+          if change_id[i][j]
+            if change_id[i][j] >= 1
+              group.class = (sprintf 'modify modify%d', change_id[i][j])
+            elsif i == 0
+              group.class = 'delete'
+            else
+              group.class = 'add'
+            end
+            if chunk == [Run.new("\n")]
+              group.runs << Run.new("&crarr;\n")
+            else
+              group.runs += chunk
+            end
+          else
+            p.runs << group unless group.runs.empty?
+            group = RunGroup.new
+            p.runs += chunk
+          end
+        end
+        p.runs << group unless group.runs.empty?
+        result[i].blocks << p
+      end
+    end
+    def get_table_diff(t1, t2, result)
+      tables = [Table.new, Table.new]
+      get_detail_blocks(t1.rows, t2.rows).each do |rblock|
+        if rblock[0].empty?
+          rblock[1].map { |r| r.cells.map { |c| c.class = 'add' } }
+          tables[1].rows += rblock[1]
+        elsif rblock[1].empty?
+          rblock[0].map { |r| r.cells.map { |c| c.class = 'delete' } }
+          tables[0].rows += rblock[0]
+        else # should be 1 row in each
+          change_id = get_diff_change_array(rblock[0].first.cells, rblock[1].first.cells)
+          for i in 0..1
+            rblock[i].first.cells.each_with_index do |cell, j|
+              if change_id[i][j]
+                if change_id[i][j] >= 1
+                  cell.class = (sprintf 'modify modify%d', change_id[i][j])
+                elsif i == 0
+                  cell.class = 'delete'
+                else
+                  cell.class = 'add'
+                end
+              end
+            end
+          end
+          tables[0].rows += rblock[0]
+          tables[1].rows += rblock[1]
+        end
+      end
+      result[0].blocks << tables[0]
+      result[1].blocks << tables[1]
+    end
+    def diff(doc1, doc2)
       blocks1 = doc1.contents.blocks
       blocks2 = doc2.contents.blocks
       
@@ -139,84 +222,28 @@ module YDocx
       
       puts 'Computing block diffs...'
       table = Table.new
-      cur_change_id = 1
       diff_blocks.each do |dblock|
         get_detail_blocks(dblock[0], dblock[1]).each do |block|
-          row = [Cell.new, Cell.new]
+          row = Row.new
+          row.cells = [Cell.new, Cell.new]
           if block[0].empty?
-            row[1].class = 'add'
-            row[1].blocks = block[1]
+            row.cells[1].class = 'add'
+            row.cells[1].blocks = block[1]
           elsif block[1].empty?
-            row[0].class = 'delete'
-            row[0].blocks = block[0]
+            row.cells[0].class = 'delete'
+            row.cells[0].blocks = block[0]
           elsif block[0] != block[1] # should only be 1 block in each
-            row[0].class = row[1].class = 'modify'
-            chunks = [block[0].first.get_chunks, block[1].first.get_chunks]
-            change_id = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
-            Diff::LCS.diff(chunks[0], chunks[1]).each do |diff|
-              count = diff.map { |c| c.action }.uniq.length
-              if count == 1
-                cid = -1
-              else
-                cid = cur_change_id
-                cur_change_id += 1
-              end
-              diff.each do |change|
-                change_id[change.action == '-' ? 0 : 1][change.position] = cid
-              end
-            end
-            
-            for i in 0..1
-              p = Paragraph.new
-              if block[i].first.is_a? Paragraph
-                p.align = block[i].first.align
-              end
-              group = RunGroup.new
-              prev_table = nil
-              chunks[i].each_with_index do |chunk, j|
-                if chunk[0].is_a?(Cell)
-                  if change_id[i][j]
-                    if change_id[i][j] >= 1
-                      chunk[0].class = (sprintf 'modify modify%d', change_id[i][j])
-                    elsif i == 0
-                      chunk[0].class = 'delete'
-                    else
-                      chunk[0].class = 'add'
-                    end
-                  end
-                  if chunk[0].parent != prev_table
-                    prev_table = chunk[0].parent
-                    row[i].blocks << prev_table
-                  end
-                else
-                  if change_id[i][j]
-                    if change_id[i][j] >= 1
-                      group.class = (sprintf 'modify modify%d', change_id[i][j])
-                    elsif i == 0
-                      group.class = 'delete'
-                    else
-                      group.class = 'add'
-                    end
-                    if chunk == [Run.new("\n")]
-                      group.runs << Run.new("&crarr;\n")
-                    else
-                      group.runs += chunk
-                    end
-                  else
-                    p.runs << group unless group.runs.empty?
-                    group = RunGroup.new
-                    p.runs += chunk
-                  end
-                end
-              end
-              p.runs << group unless group.runs.empty?
-              row[i].blocks << p
+            row.cells[0].class = row.cells[1].class = 'modify'
+            if block[0].first.is_a? Paragraph
+              get_paragraph_diff(block[0].first, block[1].first, row.cells)
+            else
+              get_table_diff(block[0].first, block[1].first, row.cells)
             end
           else
-            row[0].blocks = block[0]
-            row[1].blocks = block[1]
+            row.cells[0].blocks = block[0]
+            row.cells[1].blocks = block[1]
           end
-          table.cells << row
+          table.rows << row
         end
       end
       

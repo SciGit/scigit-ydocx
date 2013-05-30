@@ -86,7 +86,7 @@ Usage: #{self.command} file1 file2 output_file [options]
           puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f) }
           f = File.new(argv[2], "w")
-          f.write YDocx::Differ.diff(*docs)
+          f.write YDocx::Differ.new.diff(*docs)
           f.close
         end
       end

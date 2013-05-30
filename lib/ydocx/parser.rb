@@ -253,24 +253,29 @@ module YDocx
     end
   end
   
-  class Table < DocumentElement
+  class Row < DocumentElement
     attr_accessor :cells
-    def initialize
+    def initialize  
       @cells = []
     end
     def to_markup
-      rows = []
-      @cells.each do |row|
-        cells = []
-        row.each do |cell|
-          cells << cell.to_markup
-        end
-        rows << markup(:tr, cells)
-      end
-      markup :table, rows
+      markup :tr, @cells.map { |c| c.to_markup }
     end
     def get_chunks
-      @cells.flatten.map { |c| [c] }
+      @cells.map { |c| [c] }
+    end
+  end
+  
+  class Table < DocumentElement
+    attr_accessor :rows
+    def initialize
+      @rows = []
+    end
+    def to_markup
+      markup :table, @rows.map { |r| r.to_markup }
+    end
+    def get_chunks
+      @rows.map { |c| c.get_chunks }.reduce(:+)
     end
   end
   
@@ -705,7 +710,8 @@ module YDocx
         if trh = tr.at_xpath('w:trPr//w:trHeight')
           row_height = trh['w:val'].to_i * 96 / 1440
         end
-        table.cells << []
+        table_row = Row.new
+        table.rows << table_row
         col = 0
         tr.xpath('w:tc').each do |tc|
           cell = Cell.new
@@ -743,7 +749,7 @@ module YDocx
             end
           end
           if vmerge_type[row][col] != 1
-            table.cells[row] << cell
+            table_row.cells << cell
           end
           col += columns
         end
