@@ -12,7 +12,7 @@ module YDocx
       elsif chunk[0].is_a? Image
         [chunk[0].img_hash]
       elsif chunk[0].is_a? Cell
-        [chunk[0].blocks.hash]
+        chunk[0].blocks.map { |b| get_text(b.get_chunks) }
       else
         chunk.join('')
       end
@@ -34,9 +34,6 @@ module YDocx
         return 2.0 * lcs_len / tlen
       end
     end
-    def self.chunk_similarity(chunk1, chunk2)
-      text_similarity(chunk1.map(&method(:get_text)), chunk2.map(&method(:get_text)))
-    end
     # Return the % similarity between two blocks (paragraphs, tables)
     def self.block_similarity(block1, text1, block2, text2)
       if block1.class != block2.class
@@ -44,22 +41,16 @@ module YDocx
       end
       text_similarity(text1, text2)
     end
-    def self.get_chunks(paragraphs)
-      chunks = []
-      paragraphs.each_with_index do |p, i|
-        if i > 0
-          chunks << [Run.new("\r", Style.new)]
-        end
-        chunks += p.get_chunks
-      end
-      chunks
-    end
     def self.get_detail_blocks(blocks1, blocks2)
-      if blocks1.empty? || blocks2.empty?
-        return [[blocks1, blocks2]]
-      end
       n = blocks1.length
       m = blocks2.length
+      if n == 0 || m == 0
+        return [[blocks1, blocks2]]
+      end
+      if n*m > 10000
+        # assume it's all different QQ
+        return [[blocks1, []], [[], blocks2]]
+      end
       lcs = Array.new(n+1) { Array.new(m+1, 0) }
       action = Array.new(n+1) { Array.new(m+1, -1) }
       text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
@@ -68,11 +59,7 @@ module YDocx
         blocks2.reverse.each_with_index do |b, jj|
           i = n-1-ii
           j = m-1-jj
-          if n*m > 100000
-            sim = (a == b ? 1 : 0)
-          else
-            sim = block_similarity(a, text1[i], b, text2[j])
-          end
+          sim = block_similarity(a, text1[i], b, text2[j])
           # printf "%d %d = %d\n", i, j, sim
           lcs[i][j] = lcs[i+1][j]
           action[i][j] = 0
@@ -101,8 +88,7 @@ module YDocx
           j += 1
         else
           unless lblocks.empty? && rblocks.empty?
-            if lblocks.empty? || rblocks.empty? ||
-               chunk_similarity(get_chunks(lblocks), get_chunks(rblocks)) > 0.5
+            if lblocks.empty? || rblocks.empty?
               diff_blocks << [lblocks.dup, rblocks.dup]
             else
               diff_blocks << [lblocks.dup, []]
@@ -117,8 +103,7 @@ module YDocx
         end
       end
       unless lblocks.empty? && rblocks.empty?
-        if lblocks.empty? || rblocks.empty? ||
-           chunk_similarity(get_chunks(lblocks), get_chunks(rblocks)) > 0.5
+        if lblocks.empty? || rblocks.empty?
           diff_blocks << [lblocks.dup, rblocks.dup]
         else
           diff_blocks << [lblocks.dup, []]
@@ -164,9 +149,9 @@ module YDocx
           elsif block[1].empty?
             row[0].class = 'delete'
             row[0].blocks = block[0]
-          elsif block[0] != block[1]
+          elsif block[0] != block[1] # should only be 1 block in each
             row[0].class = row[1].class = 'modify'
-            chunks = [get_chunks(block[0]), get_chunks(block[1])]
+            chunks = [block[0].first.get_chunks, block[1].first.get_chunks]
             change_id = [Array.new(chunks[0].length), Array.new(chunks[1].length)]
             Diff::LCS.diff(chunks[0], chunks[1]).each do |diff|
               count = diff.map { |c| c.action }.uniq.length
@@ -183,6 +168,9 @@ module YDocx
             
             for i in 0..1
               p = Paragraph.new
+              if block[i].first.is_a? Paragraph
+                p.align = block[i].first.align
+              end
               group = RunGroup.new
               prev_table = nil
               chunks[i].each_with_index do |chunk, j|
@@ -211,22 +199,12 @@ module YDocx
                     end
                     if chunk == [Run.new("\n")]
                       group.runs << Run.new("&crarr;\n")
-                    elsif chunk == [Run.new("\r")] 
-                      group.runs << Run.new("&para;")
-                      row[i].blocks << p
-                      p.runs << group
-                      group = RunGroup.new
-                      p = Paragraph.new
                     else
                       group.runs += chunk
                     end
                   else
                     p.runs << group unless group.runs.empty?
                     group = RunGroup.new
-                    if chunk == [Run.new("\r")]
-                      row[i].blocks << p
-                      p = Paragraph.new
-                    end
                     p.runs += chunk
                   end
                 end
