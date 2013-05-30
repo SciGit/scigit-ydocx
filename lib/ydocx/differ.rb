@@ -15,13 +15,13 @@ module YDocx
       elsif chunk[0].is_a? Image
         [chunk[0].img_hash]
       elsif chunk[0].is_a? Cell
-        chunk[0].blocks.map { |b| get_text(b.get_chunks) }
+        [chunk[0].blocks]
       else
         chunk.join('')
       end
     end
+    # percent similarity of two text blocks
     def text_similarity(text1, text2)
-      # Find the LCS between the runs
       lcs = Diff::LCS.LCS(text1, text2)
       lcs_len = 0
       lcs.each do |run|
@@ -37,13 +37,6 @@ module YDocx
         return 2.0 * lcs_len / tlen
       end
     end
-    # Return the % similarity between two blocks (paragraphs, tables)
-    def block_similarity(block1, text1, block2, text2)
-      if block1.class != block2.class
-        return 0
-      end
-      text_similarity(text1, text2)
-    end
     def get_detail_blocks(blocks1, blocks2)
       n = blocks1.length
       m = blocks2.length
@@ -58,11 +51,12 @@ module YDocx
       action = Array.new(n+1) { Array.new(m+1, -1) }
       text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
       text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
+        
       blocks1.reverse.each_with_index do |a, ii|
         blocks2.reverse.each_with_index do |b, jj|
           i = n-1-ii
           j = m-1-jj
-          sim = block_similarity(a, text1[i], b, text2[j])
+          sim = (a.class == b.class ? text_similarity(text1[i], text2[j]) : 0)
           # printf "%d %d = %d\n", i, j, sim
           lcs[i][j] = lcs[i+1][j]
           action[i][j] = 0
@@ -70,7 +64,7 @@ module YDocx
             lcs[i][j] = lcs[i][j+1]
             action[i][j] = 1
           end
-          if sim > 0.5 && lcs[i+1][j+1] + sim > lcs[i][j]
+          if sim >= 0.5 && lcs[i+1][j+1] + sim > lcs[i][j]
             lcs[i][j] = lcs[i+1][j+1] + sim
             action[i][j] = 2
           end
