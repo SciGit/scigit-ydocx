@@ -149,12 +149,12 @@ module YDocx
               group.runs += chunk
             end
           else
-            p.runs << group unless group.runs.empty?
+            p.groups << group unless group.runs.empty?
             group = RunGroup.new
-            p.runs += chunk
+            p.groups << RunGroup.new(chunk)
           end
         end
-        p.runs << group unless group.runs.empty?
+        p.groups << group unless group.runs.empty?
         result[i].blocks << p
       end
     end

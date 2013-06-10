@@ -3,6 +3,7 @@
 
 require 'ydocx'
 require 'ydocx/differ'
+require 'ruby-prof'
 
 module YDocx
   class Command
@@ -86,7 +87,13 @@ Usage: #{self.command} file1 file2 output_file [options]
           puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f) }
           f = File.new(argv[2], "w")
+          #RubyProf.start
+          t = Time.now
           f.write YDocx::Differ.new.diff(*docs)
+          printf "Diff time: %f\n", Time.now - t
+          #result = RubyProf.stop
+          #printer = RubyProf::GraphHtmlPrinter.new(result)
+          #printer.print(STDOUT)
           f.close
         end
       end

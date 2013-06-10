@@ -8,6 +8,9 @@ table {
 td {
   padding: 5px 10px;
 }
+p {
+  white-space: pre-wrap;
+}
 td.add {
   background: rgba(124,255,0,0.2);
 }
