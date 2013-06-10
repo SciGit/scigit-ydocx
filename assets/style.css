@@ -20,6 +20,9 @@ td.delete {
 td.modify {
   background: rgba(0,0,255,0.1);
 }
+span.block {
+  display: inline-block;
+}
 span.add {
   background: rgba(124,252,0,0.5);
 }
