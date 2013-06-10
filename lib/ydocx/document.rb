@@ -10,16 +10,17 @@ require 'ydocx/builder'
 module YDocx
   class Document
     attr_reader :builder, :contents, :images, :parser, :path
-    def self.open(file)
-      self.new(file)
+    def self.open(file, image_url = '')
+      self.new(file, image_url)
     end
-    def initialize(file)
+    def initialize(file, image_url = '')
       @parser = nil
       @builder = nil
       @contents = nil
       @images = []
       @path = Pathname.new('.')
-      @files = nil
+      @files = Pathname.new(file).dirname
+      @image_url = image_url
       @zip = nil
       init
       read(file)
@@ -27,7 +28,7 @@ module YDocx
     def init
     end
     def output_directory
-      @files ||= @path.dirname.join(@path.basename('.docx').to_s + '_files')
+      @files
     end
     def output_file(ext)
       @path.sub_ext(".#{ext.to_s}")
@@ -35,11 +36,7 @@ module YDocx
     def to_html(output=false)
       html = ''
       files = output_directory
-      @builder = Builder.new(@contents) do |builder|
-        builder.title = @path.basename
-        builder.style = true
-        html = builder.build_html
-      end
+      html = Builder.build_html(@contents)
       if output
         create_files if has_image?
         html_file = output_file(:html)
@@ -48,20 +45,6 @@ module YDocx
         end
       end
       html
-    end
-    def to_xml(output=false)
-      xml = ''
-      Builder.new(@contents) do |builder|
-        xml = builder.build_xml
-      end
-      if output
-        xml_file = output_file(:xml)
-        mkdir xml_file.parent
-        File.open(xml_file, 'w:utf-8') do |f|
-          f.puts xml
-        end
-      end
-      xml
     end
     def create_files
       files_dir = output_directory
@@ -99,7 +82,13 @@ module YDocx
     end
     def read(file)
       @path = Pathname.new file
-      @zip = Zip::ZipFile.open(@path.realpath)
+      begin
+        @zip = Zip::ZipFile.open(@path.realpath)
+      rescue
+        # assume blank document
+        @contents = ParsedDocument.new
+        return
+      end
       doc = @zip.find_entry('word/document.xml').get_input_stream
       rel = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
       rel_xml = Nokogiri::XML.parse(rel)
@@ -117,7 +106,7 @@ module YDocx
         end
       end
       rel = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
-      @parser = Parser.new(doc, rel, rel_files, output_directory) do |parser|
+      @parser = Parser.new(doc, rel, rel_files, @image_url) do |parser|
         @contents = parser.parse
         @images = parser.images
       end

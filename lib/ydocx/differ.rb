@@ -1,11 +1,13 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
 
-require 'ydocx'
+require 'ydocx/builder'
 require 'diff/lcs'
 
 module YDocx
   class Differ
+    Block = Struct.new(:start_line, :type, :lines)
+
     def initialize
       @cur_change_id = 1
     end
@@ -137,11 +139,11 @@ module YDocx
         chunks[i].each_with_index do |chunk, j|
           if change_id[i][j]
             if change_id[i][j] >= 1
-              group.class = (sprintf 'modify modify%d', change_id[i][j])
+              group.css_class = (sprintf 'modify modify-%d', change_id[i][j])
             elsif i == 0
-              group.class = 'delete'
+              group.css_class = 'delete'
             else
-              group.class = 'add'
+              group.css_class = 'add'
             end
             if chunk == [Run.new("\n")]
               group.runs << Run.new("&crarr;\n")
@@ -149,23 +151,24 @@ module YDocx
               group.runs += chunk
             end
           else
-            p.groups << group unless group.runs.empty?
+            p.runs << group unless group.runs.empty?
             group = RunGroup.new
-            p.groups << RunGroup.new(chunk)
+            p.runs += chunk
           end
         end
-        p.groups << group unless group.runs.empty?
-        result[i].blocks << p
+        p.runs << group unless group.runs.empty?
+        p.merge_runs
+        result[i] << p
       end
     end
     def get_table_diff(t1, t2, result)
       tables = [Table.new, Table.new]
       get_detail_blocks(t1.rows, t2.rows).each do |rblock|
         if rblock[0].empty?
-          rblock[1].map { |r| r.cells.map { |c| c.class = 'add' } }
+          rblock[1].map { |r| r.cells.map { |c| c.css_class = 'add' } }
           tables[1].rows += rblock[1]
         elsif rblock[1].empty?
-          rblock[0].map { |r| r.cells.map { |c| c.class = 'delete' } }
+          rblock[0].map { |r| r.cells.map { |c| c.css_class = 'delete' } }
           tables[0].rows += rblock[0]
         else # should be 1 row in each
           change_id = get_diff_change_array(rblock[0].first.cells, rblock[1].first.cells)
@@ -173,11 +176,11 @@ module YDocx
             rblock[i].first.cells.each_with_index do |cell, j|
               if change_id[i][j]
                 if change_id[i][j] >= 1
-                  cell.class = (sprintf 'modify modify%d', change_id[i][j])
+                  cell.css_class = (sprintf 'modify modify-%d', change_id[i][j])
                 elsif i == 0
-                  cell.class = 'delete'
+                  cell.css_class = 'delete'
                 else
-                  cell.class = 'add'
+                  cell.css_class = 'add'
                 end
               end
             end
@@ -186,18 +189,56 @@ module YDocx
           tables[1].rows += rblock[1]
         end
       end
-      result[0].blocks << tables[0]
-      result[1].blocks << tables[1]
+      result[0] << tables[0]
+      result[1] << tables[1]
     end
     def diff(doc1, doc2)
-      blocks1 = doc1.contents.blocks
-      blocks2 = doc2.contents.blocks
+      blocks1 = doc1.blocks
+      blocks2 = doc2.blocks
+      result = {:inline => [[], []], :side => [[], []]}
+
+      pg = [1, 1]
+      lblocks = []
+      rblocks = []
+      inline_blocks = []
+      Diff::LCS.sdiff(blocks1, blocks2).each do |change|
+        if change.action == '='
+          inline_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
+          inline_blocks << [[blocks1[change.old_position]], [blocks2[change.new_position]]]
+          lblocks = []
+          rblocks = []
+        else
+          lblocks << blocks1[change.old_position] unless change.old_element.nil?
+          rblocks << blocks2[change.new_position] unless change.new_element.nil?
+        end
+      end
+      inline_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
+      inline_blocks.each do |blocks|
+        html_blocks = blocks.map do |block|
+          block.map { |b| Builder.build_html(b) }
+        end
+        if blocks[0] == blocks[1]
+          result[:inline][0] << Block.new(pg[0], '=', html_blocks[0])
+          result[:inline][1] << Block.new(pg[1], '=', html_blocks[1])
+          pg[0] += html_blocks[0].length
+          pg[1] += html_blocks[1].length
+        else
+          unless blocks[0].empty?
+            result[:inline][0] << Block.new(pg[0], '-', html_blocks[0])
+            result[:inline][1] << nil
+            pg[0] += html_blocks[0].length
+          end
+          unless blocks[1].empty?
+            result[:inline][0] << nil
+            result[:inline][1] << Block.new(pg[1], '+', html_blocks[1])
+            pg[1] += html_blocks[1].length
+          end
+        end
+      end
       
-      puts 'Extracting text...'
       text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
       text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
       
-      puts 'Computing paragraph diffs...'
       lblocks = []
       rblocks = []
       diff_blocks = []
@@ -214,45 +255,44 @@ module YDocx
       end
       diff_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
       
-      puts 'Computing block diffs...'
-      table = Table.new
+      pg = [1, 1]
       diff_blocks.each do |dblock|
         get_detail_blocks(dblock[0], dblock[1]).each do |block|
-          row = Row.new
-          row.cells = [Cell.new, Cell.new]
+          type = ['=', '=']
+          blocks = [[], []]
           if block[0].empty?
-            row.cells[1].class = 'add'
-            row.cells[1].blocks = block[1]
+            blocks[1] = block[1]
+            type[1] = '+'
           elsif block[1].empty?
-            row.cells[0].class = 'delete'
-            row.cells[0].blocks = block[0]
-          elsif block[0] != block[1] # should only be 1 block in each
-            row.cells[0].class = row.cells[1].class = 'modify'
+            blocks[0] = block[0]
+            type[0] = '-'
+          elsif block[0] != block[1]
+            # Each block should only contain 1 element
+            type = ['!', '!']
             if block[0].first.is_a? Paragraph
-              get_paragraph_diff(block[0].first, block[1].first, row.cells)
+              get_paragraph_diff(block[0].first, block[1].first, blocks)
             else
-              get_table_diff(block[0].first, block[1].first, row.cells)
+              get_table_diff(block[0].first, block[1].first, blocks)
             end
           else
-            row.cells[0].blocks = block[0]
-            row.cells[1].blocks = block[1]
+            blocks[0] = block[0]
+            blocks[1] = block[1]
           end
-          table.rows << row
+          blocks = blocks.map do |block|
+            block.map { |b| Builder.build_html(b) }
+          end
+          for i in 0..1
+            if blocks[i].empty?
+              result[:side][i] << nil
+            else
+              result[:side][i] << Block.new(pg[i], type[i], blocks[i])
+              pg[i] += blocks[i].length
+            end
+          end
         end
       end
       
-      [doc1, doc2].each do |doc|
-        if !doc.images.empty?
-          doc.create_files
-        end
-      end
-      
-      html_doc = ParsedDocument.new
-      html_doc.blocks << table
-      builder = Builder.new(html_doc)
-      builder.title = 'Diff Results'
-      builder.style = true
-      builder.build_html
+      result 
     end
   end
 end

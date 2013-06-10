@@ -3,7 +3,6 @@
 
 require 'ydocx'
 require 'ydocx/differ'
-require 'ruby-prof'
 
 module YDocx
   class Command
@@ -87,6 +86,7 @@ Usage: #{self.command} file1 file2 output_file [options]
           puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f) }
           f = File.new(argv[2], "w")
+          #require 'ruby-prof'
           #RubyProf.start
           t = Time.now
           f.write YDocx::Differ.new.diff(*docs)

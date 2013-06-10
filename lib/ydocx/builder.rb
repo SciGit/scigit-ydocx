@@ -8,51 +8,36 @@ require 'ydocx/markup_method'
 module YDocx
   class Builder
     include MarkupMethod
-    attr_accessor :contents, :style, :title
-    def initialize(contents)
-      @contents = contents
-      @style = false
-      @title = ''
-      init
-      if block_given?
-        yield self
+    def self.build_html(node)
+      compile(node, :html)
+    end
+   private
+    def self.compile(node, mode)
+      element = node.to_markup
+      build_tag(element[:tag], element[:content], element[:attributes], mode)
+    end
+    def self.escape_whitespace(text)
+      prev_ws = false
+      new_text = ''
+      text.each_char do |c|
+        if c == "\n"
+          new_text += "<br />"
+          prev_ws = true
+        elsif c =~ /[[:space:]]/
+          if prev_ws
+            new_text += "&nbsp;"
+          else
+            new_text += c
+          end
+          prev_ws = true
+        else  
+          new_text += c
+          prev_ws = false
+        end
       end
+      new_text
     end
-    def init
-    end
-    def build_html
-      body = compile(@contents, :html)
-      builder = Nokogiri::HTML::Builder.new do |doc|
-        doc.html {
-          doc.head {
-            doc.meta :charset => 'utf-8'
-            doc.title @title
-            doc.link :rel => 'stylesheet', :type => 'text/css', :href => 'assets/style.css' if @style
-            doc.script :src => 'assets/script.js'
-          }
-          doc.body { doc << body }
-        }
-      end
-      builder.to_html
-    end
-    def build_xml
-      paragraphs = compile(@contents, :xml)
-      builder = Nokogiri::XML::Builder.new do |xml|
-        xml.document {
-          xml.paragraphs { xml << paragraphs }
-        }
-      end
-      builder.to_xml(:indent => 0, :encoding => 'utf-8').gsub(/\n/, '')
-    end
-    private
-    def compile(contents, mode)
-      result = ''
-      contents.to_markup.each do |element|
-        result << build_tag(element[:tag], element[:content], element[:attributes], mode)
-      end
-      result
-    end
-    def build_tag(tag, content, attributes, mode=:html)
+    def self.build_tag(tag, content, attributes, mode=:html)
       if tag == :br and mode != :xml
         return "<br/>"
       elsif content.nil? or content.empty?
@@ -65,13 +50,13 @@ module YDocx
           if c.is_a? Hash
             _content << build_tag(c[:tag], c[:content], c[:attributes], mode)
           elsif c.is_a? String
-            _content << (mode == :html ? c : c.chomp.to_s)
+            _content << (mode == :html ? escape_whitespace(c) : c.chomp.to_s)
           end
         end
       elsif content.is_a? Hash
         _content = build_tag(content[:tag], content[:content], content[:attributes], mode)
       elsif content.is_a? String        
-        _content = content
+        _content = (mode == :html ? escape_whitespace(content) : content)
       end
       _tag = tag.to_s
       _attributes = ''

@@ -13,7 +13,7 @@ module YDocx
   class DocumentElement
    private
     attr_accessor :hash
-    @@ignored_variables = {:@src => 1, :@class => 1, :@parent => 1}
+    @@ignored_variables = [:@src, :@css_class, :@parent]
    public
     include MarkupMethod
     def ==(elem)
@@ -54,8 +54,8 @@ module YDocx
       attributes = {}
       style = ['display: ' + @wrap]
       if @height
-        style << "height: #{@height}"
-        style << "width: #{@width}"
+        style << "height: #{@height}px"
+        style << "width: #{@width}px"
       end
       attributes[:style] = style.join('; ')
       if @src
@@ -127,57 +127,50 @@ module YDocx
   end
   
   class RunGroup < DocumentElement
-    attr_accessor :runs, :class
-    def initialize(runs = [])
-      @runs = runs
+    attr_accessor :runs, :css_class
+    def initialize
+      @runs = []
+    end
+    def to_markup
+      markup :span, @runs.map { |r| r.to_markup }, {:class => @css_class }
+    end
+  end
+  
+  class Paragraph < DocumentElement
+    attr_accessor :runs, :align
+    def initialize(align='left')
+      @align = align
+      @runs = []
     end
     def length
-      @runs.map { |r| r.length }.reduce(0, :+)
+      sum = 0
+      runs.each { |r| sum += r.length }
+      sum
     end
-    def self.merge_runs(runs)
+    def merge_runs
       # merge adjacent runs with identical formatting.
       new_runs = []
       cur_text = ''
       cur_style = Style.new
       i = 0
-      while i < runs.length
-        if !runs[i].is_a?(Run)
-          new_runs << runs[i]
+      while i < @runs.length
+        if !@runs[i].is_a?(Run)
+          new_runs << @runs[i]
           i += 1
         else
           j = i + 1
-          text = runs[i].text.dup
-          while j < runs.length && runs[j].is_a?(Run) && (runs[j].style == runs[i].style || runs[j].text == "\n")
-            text << runs[j].text
+          text = @runs[i].text.dup
+          while j < @runs.length && @runs[j].is_a?(Run) && (@runs[j].style == @runs[i].style || @runs[j].text == "\n")
+            text << @runs[j].text
             j += 1
           end
-          new_runs << Run.new(text, runs[i].style)
+          new_runs << Run.new(text, @runs[i].style)
           i = j
         end
       end
-      new_runs
+      @runs = new_runs
     end
-    def to_markup
-      if @class
-        markup :span, RunGroup.merge_runs(@runs).map { |r| r.to_markup }, {:class => @class }
-      else
-        RunGroup.merge_runs(@runs).map { |r| r.to_markup }
-      end
-    end
-  end
-  
-  class Paragraph < DocumentElement
-    attr_accessor :groups, :align
-    def initialize(align='left')
-      @align = align
-      @groups = []
-    end
-    def length
-      sum = 0
-      groups.each { |g| sum += g.length }
-      sum
-    end
-    def self.get_type(char)
+    def get_type(char)
       if char == ' '
         :space
       elsif char == "\n"
@@ -187,43 +180,39 @@ module YDocx
       end
     end
     def get_chunks
-      return @groups.map { |g| g.runs }
-    end
-    def self.group_runs(runs)
       # get chunks of words, newlines, and contiguous spaces; each chunk may have multiple runs
-      cur_group = RunGroup.new
+      cur_chunk = []
       cur_text = ''
       cur_type = nil
-      groups = []
-      runs.each do |run|
+      chunks = []
+      @runs.each do |run|
         if run.is_a? Run
           run.text.each_char do |c|
             if cur_type.nil? || (cur_type != :newline && get_type(c) == cur_type)
               cur_text += c
             else
-              cur_group.runs << Run.new(cur_text, (cur_type == :newline ? Style.new : run.style)) unless cur_text.empty?
-              groups << cur_group unless cur_group.runs.empty?
-              cur_group = RunGroup.new
+              cur_chunk << Run.new(cur_text, (cur_type == :newline ? Style.new : run.style)) unless cur_text.empty?
+              chunks << cur_chunk unless cur_chunk.empty?
+              cur_chunk = []
               cur_text = c
             end
             cur_type = get_type(c)
           end
         elsif run.is_a? Image
-          groups << cur_group unless cur_group.runs.empty?
-          cur_group = RunGroup.new
-          groups << RunGroup.new([run])
+          chunks << cur_chunk unless cur_chunk.empty?
+          chunks << [run]
+          cur_chunk = []
         end
         unless cur_text.empty?
-          cur_group.runs << Run.new(cur_text, run.style)
+          cur_chunk << Run.new(cur_text, run.style)
           cur_text = ''
         end
       end
-      groups << cur_group unless cur_group.runs.empty?
-      groups
+      chunks << cur_chunk unless cur_chunk.empty?
+      chunks
     end
     def to_markup
-      runs = @groups.map{ |group| group.class.nil? ? group.runs : group }.flatten
-      markup :p, RunGroup.merge_runs(runs).map(&:to_markup), {:align => @align}
+      markup :p, @runs.map { |run| run.to_markup }, {:align => @align}
     end
     def to_s
       @runs.to_s
@@ -232,7 +221,7 @@ module YDocx
   
   class Cell < DocumentElement
     attr_accessor :rowspan, :colspan, :height, :width, :valign, :blocks
-    attr_accessor :class, :row, :col, :parent
+    attr_accessor :css_class, :row, :col, :parent
     def initialize(rowspan=1, colspan=1, height=nil, width=nil, valign='top')
       @rowspan = rowspan
       @colspan = colspan
@@ -248,13 +237,13 @@ module YDocx
       end
       css = ["vertical-align: #{@valign}"]
       if height
-        css << "height: #{@height}"
+        css << "height: #{@height}px"
       end
       if width
-        css << "width: #{@width}"
+        css << "width: #{@width}px"
       end
       markup :td, contents, {
-        :class => @class,
+        :class => @css_class,
         :rowspan => @rowspan,
         :colspan => @colspan,
         :style => css.join('; ')
@@ -281,7 +270,7 @@ module YDocx
       @rows = []
     end
     def to_markup
-      markup :table, @rows.map { |r| r.to_markup }
+      markup :p, (markup :table, @rows.map { |r| r.to_markup }, :class => 'docx')
     end
     def get_chunks
       @rows.map { |c| c.get_chunks }.reduce(:+)
@@ -304,7 +293,7 @@ module YDocx
   
   class Parser
     attr_accessor :images, :result, :space
-    def initialize(doc, rel, rel_files, output_dir)
+    def initialize(doc, rel, rel_files, image_url = '')
       @doc = Nokogiri::XML.parse(doc)
       @rel = Nokogiri::XML.parse(rel)
       @rel_files = rel_files
@@ -319,9 +308,9 @@ module YDocx
       @endnote_fmt = 'lowerRoman'
       @coder = HTMLEntities.new
       @images = []
-      @output_dir = output_dir
       @result = ParsedDocument.new
       @image_path = 'images'
+      @image_url = image_url
       @image_style = ''
       init
       if block_given?
@@ -592,7 +581,7 @@ module YDocx
                 :source => source,
                 :data => data,
               }
-              img.src = @output_dir.join(source)
+              img.src = @image_url + source
               img.img_hash = data.hash
             end
           else
@@ -606,7 +595,7 @@ module YDocx
     def source_path(target)
       source = @image_path + '/'
       if defined? Magick::Image and
-         ext = File.extname(target).match(/\.(w|e)mf$/).to_a[0] # EMF may not work outside of windows!
+         ext = File.extname(target).match(/\.wmf$/).to_a[0]
         source << File.basename(target, ext) + '.png'
       else
         source << File.basename(target)
@@ -631,7 +620,6 @@ module YDocx
       style = apply_style(style, node)
       num_id = style.numid
       indent_level = style.ilvl || 0
-      paragraph_runs = []
       unless num_id.nil?
         if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
           format = num_desc[:format]
@@ -659,7 +647,7 @@ module YDocx
             end
           end
           unless format == ''
-            paragraph_runs << parse_text(format + ' ', num_style)
+            paragraph.runs << parse_text(format + ' ', num_style)
           end
         end
       end
@@ -675,7 +663,7 @@ module YDocx
           end
         end
         if has_image
-          paragraph_runs << parse_image(child)
+          paragraph.runs << parse_image(child)
           next
         end
         if child.name == 'r'
@@ -701,8 +689,8 @@ module YDocx
               if t['w:font']
                 chr_style.font = t['w:font']
               end
-              paragraph_runs << parse_text(text, r_style)
-              paragraph_runs << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
+              paragraph.runs << parse_text(text, r_style)
+              paragraph.runs << parse_text('&#x' + val.to_s(16) + ';', chr_style, true)
               text = ''
             elsif t.name == 'footnoteReference' &&
                   (t['w:customMarkFollows'].nil? || t['w:customMarkFollows'] == 'false')
@@ -715,13 +703,12 @@ module YDocx
             end
           end
           unless text.empty?
-            paragraph_runs << parse_text(text, r_style)
+            paragraph.runs << parse_text(text, r_style)
           end
         end
       end
       
-      paragraph_runs = RunGroup.merge_runs(paragraph_runs)
-      paragraph.groups = Paragraph.group_runs(paragraph_runs)
+      paragraph.merge_runs
       paragraph
     end
     def parse_table(node)

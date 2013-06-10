@@ -8,7 +8,7 @@ if $0 == __FILE__
 end
 
 require 'ydocx/command'
-require 'ruby-prof'
+#require 'ruby-prof'
 
 #RubyProf.start
 YDocx::Command.run(:to_html)
