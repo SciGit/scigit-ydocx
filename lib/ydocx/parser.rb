@@ -5,7 +5,7 @@ require 'nokogiri'
 require 'htmlentities'
 require 'ydocx/markup_method'
 require 'roman-numerals'
-# require 'RMagick'
+require 'RMagick'
 
 module YDocx
   Style = Struct.new(:b, :u, :i, :strike, :caps, :smallCaps, :font, :sz, :color, :valign, :ilvl, :numid)
@@ -294,8 +294,8 @@ module YDocx
   class Parser
     attr_accessor :images, :result, :space
     def initialize(doc, rel, rel_files, output_dir)
-      @doc = Nokogiri::XML.parse(doc.read)
-      @rel = Nokogiri::XML.parse(rel.read)
+      @doc = Nokogiri::XML.parse(doc)
+      @rel = Nokogiri::XML.parse(rel)
       @rel_files = rel_files
       @style_nodes = {}
       @styles = {}
@@ -430,7 +430,7 @@ module YDocx
     
     def parse
       if settings_file = @rel_files.select { |file| file[:type] =~ /relationships\/settings$/ }.first
-        settings_xml = Nokogiri::XML.parse(settings_file[:stream].read)
+        settings_xml = Nokogiri::XML.parse(settings_file[:stream])
         if fpr = settings_xml.at_xpath('//w:settings//w:footnotePr')
           if start = fpr.at_xpath('w:numStart')
             @cur_footnote = start['w:val'].to_i
@@ -450,7 +450,7 @@ module YDocx
       end
     
       if theme_file = @rel_files.select { |file| file[:type] =~ /relationships\/theme$/ }.first
-        theme_xml = Nokogiri::XML.parse(theme_file[:stream].read)
+        theme_xml = Nokogiri::XML.parse(theme_file[:stream])
         ['major', 'minor'].each do |type|
           if font = theme_xml.at_xpath(".//a:#{type}Font//a:latin")
             @theme_fonts[type] = font['typeface']
@@ -459,7 +459,7 @@ module YDocx
       end
       
       if style_file = @rel_files.select { |file| file[:type] =~ /relationships\/styles$/ }.first
-        style_xml = Nokogiri::XML.parse(style_file[:stream].read)
+        style_xml = Nokogiri::XML.parse(style_file[:stream])
         style_xml.xpath('//w:styles//w:style').each do |style|
           @style_nodes[style['w:styleId']] = style
         end
@@ -474,7 +474,7 @@ module YDocx
       end
       
       if num_file = @rel_files.select { |file| file[:type] =~ /relationships\/numbering$/ }.first
-        num_xml = Nokogiri::XML.parse(num_file[:stream].read)
+        num_xml = Nokogiri::XML.parse(num_file[:stream])
         abstract_nums = {}
         num_xml.xpath('//w:numbering//w:abstractNum').each do |abstr|
           abstract_nums[abstr['w:abstractNumId']] = abstr
