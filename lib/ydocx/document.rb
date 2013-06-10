@@ -3,7 +3,7 @@
 
 require 'pathname'
 require 'zip/zip'
-require 'RMagick'
+# require 'RMagick'
 require 'ydocx/parser'
 require 'ydocx/builder'
 
@@ -102,7 +102,7 @@ module YDocx
       @zip = Zip::ZipFile.open(@path.realpath)
       doc = @zip.find_entry('word/document.xml').get_input_stream
       rel = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
-      rel_xml = Nokogiri::XML.parse(rel)
+      rel_xml = Nokogiri::XML.parse(rel.read)
       rel_files = []
       rel_xml.xpath('/').children.each do |relat|
         relat.children.each do |r|
