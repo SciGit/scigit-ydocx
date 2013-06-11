@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Yasuhiro Asaka, Zeno R.R. Davatz"]
-  s.date = "2013-06-10"
+  s.date = "2013-06-11"
   s.email = "yasaka@ywesee.com, zdavatz@ywesee.com"
   s.executables = ["diffx", "docx2html", "docx2xml"]
   s.extra_rdoc_files = [
@@ -25,8 +25,10 @@ Gem::Specification.new do |s|
     "lib/ydocx/command.rb",
     "lib/ydocx/differ.rb",
     "lib/ydocx/document.rb",
+    "lib/ydocx/elements.rb",
     "lib/ydocx/markup_method.rb",
-    "lib/ydocx/parser.rb"
+    "lib/ydocx/parser.rb",
+    "ydocx.gemspec"
   ]
   s.homepage = "http://www.github.com/zdavatz/ydocx"
   s.require_paths = ["lib"]
@@ -44,6 +46,7 @@ Gem::Specification.new do |s|
       s.add_runtime_dependency(%q<rmagick>, [">= 0"])
       s.add_runtime_dependency(%q<ruby-prof>, [">= 0"])
       s.add_runtime_dependency(%q<diff-lcs>, [">= 0"])
+      s.add_runtime_dependency(%q<murmurhash3>, [">= 0"])
     else
       s.add_dependency(%q<nokogiri>, [">= 0"])
       s.add_dependency(%q<rubyzip>, [">= 0"])
@@ -52,6 +55,7 @@ Gem::Specification.new do |s|
       s.add_dependency(%q<rmagick>, [">= 0"])
       s.add_dependency(%q<ruby-prof>, [">= 0"])
       s.add_dependency(%q<diff-lcs>, [">= 0"])
+      s.add_dependency(%q<murmurhash3>, [">= 0"])
     end
   else
     s.add_dependency(%q<nokogiri>, [">= 0"])
@@ -61,6 +65,7 @@ Gem::Specification.new do |s|
     s.add_dependency(%q<rmagick>, [">= 0"])
     s.add_dependency(%q<ruby-prof>, [">= 0"])
     s.add_dependency(%q<diff-lcs>, [">= 0"])
+    s.add_dependency(%q<murmurhash3>, [">= 0"])
   end
 end
 
