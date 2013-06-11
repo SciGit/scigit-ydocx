@@ -326,7 +326,7 @@ module YDocx
             end
           end
           if child.name == 'pStyle'
-            style = @styles[child['w:val']]
+            style = @styles[child['w:val']].dup
           end
         end
       end
