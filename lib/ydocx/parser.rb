@@ -133,7 +133,7 @@ module YDocx
         if based = node.at_xpath('w:basedOn')
           style = compute_style(based['w:val'])
         else
-          style = @default_style
+          style = Style.new
         end
         @styles[id] = style.dup
         @styles[id].apply(node_style(node))
@@ -316,7 +316,7 @@ module YDocx
     def parse_paragraph(node)
       paragraph = Paragraph.new
       paragraph_runs = []
-      style = @default_style.dup
+      paragraph_style = Style.new
       if ppr = node.at_xpath('w:pPr')
         ppr.children.each do |child|
           if child.name == 'jc'
@@ -326,23 +326,31 @@ module YDocx
             end
           end
           if child.name == 'pStyle'
-            style = @styles[child['w:val']].dup
+            paragraph_style = @styles[child['w:val']]
           end
         end
       end
-      style.apply(node_style(node))
+
+      node_style = node_style(node)
+      style = @default_style.dup
+      style.apply(paragraph_style)
+      style.apply(node_style)
+
       num_id = style.numid
       indent_level = style.ilvl || 0
       unless num_id.nil?
         if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
           format = num_desc[:format]
           is_legal = num_desc[:isLgl]
-          num_style = style.dup
+          num_style = @default_style.dup
+          num_style.apply(paragraph_style)
           # It seems that text size from pPr.rPr applies to numbering in some cases...
           if sz = node.at_xpath('w:pPr//w:rPr//w:sz')
             num_style.sz = sz['w:val'].to_i
           end
           num_style.apply(num_desc[:style])
+          num_style.apply(node_style)
+
           for ilvl in 0..indent_level
             if num_desc = @numbering_desc[num_id][ilvl]
               num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
