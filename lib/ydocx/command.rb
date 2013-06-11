@@ -86,6 +86,8 @@ Usage: #{self.command} file1 file2 output_file [options]
           STDOUT.sync = true
           puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f, Pathname.new(f).basename('.docx').to_s + '_files/') }
+          docs.each { |d| d.contents.hash } # precompute hashes for diffing
+
           f = File.new(argv[2], "w")
           if @@profile
             require 'ruby-prof'

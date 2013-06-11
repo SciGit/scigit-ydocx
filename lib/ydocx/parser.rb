@@ -6,16 +6,14 @@ require 'htmlentities'
 require 'ydocx/markup_method'
 require 'roman-numerals'
 require 'RMagick'
+require 'murmurhash3'
 
 module YDocx
-  Style = Struct.new(:b, :u, :i, :strike, :caps, :smallCaps, :font, :sz, :color, :valign, :ilvl, :numid)
-
-  class DocumentElement
+  class Hashable
    private
-    attr_accessor :hash
     @@ignored_variables = {:@src => 1, :@css_class => 1, :@parent => 1}
    public
-    include MarkupMethod
+    attr_accessor :cached_hash
     def ==(elem)
       hash == elem.hash
     end
@@ -28,18 +26,47 @@ module YDocx
     def reset_hash
       @hash = nil
     end
-    def hash
-      if @hash.nil?
-        vals = []
-        instance_variables.each do |var|
-          if var != :@hash && !@@ignored_variables.include?(var)
-            vals << instance_variable_get(var)
+    def self.murmur_hash(obj)
+      if obj.is_a?(Hashable) && !obj.cached_hash.nil?
+        return obj.cached_hash
+      end
+      hash = MurmurHash3::Native32.murmur3_32_str_hash(obj.class.name)
+      if obj.is_a?(Hashable)
+        obj.instance_variables.each do |var|
+          if var != :@cached_hash && !@@ignored_variables.include?(var)
+            hash = MurmurHash3::Native32.murmur3_32_int32_hash(
+                murmur_hash(obj.instance_variable_get(var)), hash)
           end
         end
-        @hash = vals.hash
+        obj.cached_hash = hash
+      elsif obj.is_a?(Array)
+        obj.each do |x|
+          hash = MurmurHash3::Native32.murmur3_32_int32_hash(murmur_hash(x), hash)
+        end
+      elsif obj.nil?
+        # just hashing the class name will do
+      else
+        hash = MurmurHash3::Native32.murmur3_32_str_hash(obj.to_s, hash)
       end
-      @hash
+      hash
     end
+    def hash
+      Hashable.murmur_hash(self)
+    end
+  end
+
+  class Style < Hashable
+    attr_accessor :b, :u, :i, :strike, :caps, :smallCaps, :font, :sz, :color, :valign, :ilvl, :numid
+    def apply(new_style)
+      new_style.instance_variables.each do |key|
+        instance_variable_set(key, new_style.instance_variable_get(key))
+      end
+      self
+    end
+  end
+
+  class DocumentElement < Hashable
+    include MarkupMethod
   end
   
   class Image < DocumentElement
@@ -363,16 +390,8 @@ module YDocx
       end
     end
     
-    def extend_style(old_style, new_style)
-      style = Style.new()
-      new_style.members.each do |key|
-        style[key] = new_style[key] || old_style[key]
-      end
-      style
-    end
-    
-    def apply_style(old_style, node)
-      style = old_style.dup()
+    def node_style(node)
+      style = Style.new
       
       node.children.each do |prop|
         if prop.name == 'pPr'
@@ -391,10 +410,10 @@ module YDocx
         if prop.name == 'rPr'
           prop.children.each do |child|
             if child.name == 'rStyle'
-              style = extend_style(style, @styles[child['w:val']])
+              style.apply(@styles[child['w:val']])
             end
             if ['b', 'i', 'caps', 'smallCaps'].include? child.name
-              style[child.name] = get_bool(child)
+              style.instance_variable_set("@#{child.name}".to_sym, get_bool(child))
             end
             if !style.strike && (child.name == 'strike' || child.name == 'dstrike')
               style.strike = get_bool(child)
@@ -435,7 +454,8 @@ module YDocx
         else
           style = @default_style
         end
-        @styles[id] = apply_style(style, node)
+        @styles[id] = style.dup
+        @styles[id].apply(node_style(node))
       end
     end
     
@@ -476,7 +496,7 @@ module YDocx
         end
         @default_style = Style.new()
         if def_style = style_xml.at_xpath('//w:styles//w:docDefaults//w:rPrDefault')
-          @default_style = apply_style(Style.new(), def_style)
+          @default_style = node_style(def_style)
         end
       end
       
@@ -504,7 +524,7 @@ module YDocx
                   :numFmt => lvl.at_xpath('w:numFmt')['w:val'],
                   :format => lvl.at_xpath('w:lvlText')['w:val'],
                   :isLgl  => get_bool(lvl.at_xpath('w:isLgl')),
-                  :style  => apply_style(Style.new(), lvl)
+                  :style  => node_style(lvl),
                 }
               end
             end
@@ -519,7 +539,7 @@ module YDocx
                 :numFmt => lvl.at_xpath('w:numFmt')['w:val'],
                 :format => lvl.at_xpath('w:lvlText')['w:val'],
                 :isLgl  => get_bool(lvl.at_xpath('w:isLgl')),
-                :style  => apply_style(Style.new(), lvl)
+                :style  => node_style(lvl),
               }
             end
           end
@@ -615,7 +635,7 @@ module YDocx
     def parse_paragraph(node)
       paragraph = Paragraph.new
       paragraph_runs = []
-      style = @default_style
+      style = @default_style.dup
       if ppr = node.at_xpath('w:pPr')
         ppr.children.each do |child|
           if child.name == 'jc'
@@ -629,19 +649,19 @@ module YDocx
           end
         end
       end
-      style = apply_style(style, node)
+      style.apply(node_style(node))
       num_id = style.numid
       indent_level = style.ilvl || 0
       unless num_id.nil?
         if @numbering_desc[num_id] && num_desc = @numbering_desc[num_id][indent_level]
           format = num_desc[:format]
           is_legal = num_desc[:isLgl]
-          num_style = style.dup()
+          num_style = style.dup
           # It seems that text size from pPr.rPr applies to numbering in some cases...
           if sz = node.at_xpath('w:pPr//w:rPr//w:sz')
-            num_style[:sz] = sz['w:val'].to_i
+            num_style.sz = sz['w:val'].to_i
           end
-          num_style = extend_style(num_style, num_desc[:style])
+          num_style.apply(num_desc[:style])
           for ilvl in 0..indent_level
             if num_desc = @numbering_desc[num_id][ilvl]
               num = num_desc[:start] + @numbering_count[num_id][ilvl] - (ilvl < indent_level ? 1 : 0)
@@ -682,7 +702,8 @@ module YDocx
           runs << child
         end
         runs.each do |r|
-          r_style = apply_style(style, r)
+          r_style = style.dup
+          r_style.apply(node_style(r))
           text = ''
           r.children.each do |t|
             if t.name == 'br'
