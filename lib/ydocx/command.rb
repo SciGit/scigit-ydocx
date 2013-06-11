@@ -112,16 +112,17 @@ Usage: #{self.command} file1 file2 output_file [options]
           end
           html_doc.blocks << table
           
+          printf "Diff time: %f\n", Time.now - t
+          #result = RubyProf.stop
+          #printer = RubyProf::GraphHtmlPrinter.new(result)
+          #printer.print(STDOUT)
+          
           docs.each do |doc|
             doc.to_html(true)
           end
           
           f.write YDocx::Builder.build_page(html_doc)
           
-          printf "Diff time: %f\n", Time.now - t
-          #result = RubyProf.stop
-          #printer = RubyProf::GraphHtmlPrinter.new(result)
-          #printer.print(STDOUT)
           f.close
         end
       end
