@@ -235,27 +235,8 @@ module YDocx
         end
       end
       
-      text1 = blocks1.map { |b| b.get_chunks.map(&method(:get_text)) }
-      text2 = blocks2.map { |b| b.get_chunks.map(&method(:get_text)) }
-      
-      lblocks = []
-      rblocks = []
-      diff_blocks = []
-      Diff::LCS.sdiff(text1.map(&:hash), text2.map(&:hash)).each do |change|
-        if change.action == '='
-          diff_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
-          diff_blocks << [[blocks1[change.old_position]], [blocks2[change.new_position]]]
-          lblocks = []
-          rblocks = []
-        else
-          lblocks << blocks1[change.old_position] unless change.old_element.nil?
-          rblocks << blocks2[change.new_position] unless change.new_element.nil?
-        end
-      end
-      diff_blocks << [lblocks.dup, rblocks.dup] unless lblocks.empty? && rblocks.empty?
-      
       pg = [1, 1]
-      diff_blocks.each do |dblock|
+      inline_blocks.each do |dblock|
         get_detail_blocks(dblock[0], dblock[1]).each do |block|
           type = ['=', '=']
           blocks = [[], []]

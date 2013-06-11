@@ -13,7 +13,7 @@ module YDocx
   class DocumentElement
    private
     attr_accessor :hash
-    @@ignored_variables = [:@src, :@css_class, :@parent]
+    @@ignored_variables = {:@src => 1, :@css_class => 1, :@parent => 1}
    public
     include MarkupMethod
     def ==(elem)

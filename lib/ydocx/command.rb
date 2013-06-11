@@ -9,6 +9,7 @@ module YDocx
     class << self
       @@help    = /^\-(h|\-help)$/u
       @@version = /^\-(v|\-version)$/u
+      @@profile = false
       def error(message='')
         puts message
         puts "see `#{self.command} --help`"
@@ -86,8 +87,10 @@ Usage: #{self.command} file1 file2 output_file [options]
           puts 'Parsing...'
           docs = files.map { |f| YDocx::Document.open(f, Pathname.new(f).basename('.docx').to_s + '_files/') }
           f = File.new(argv[2], "w")
-          #require 'ruby-prof'
-          #RubyProf.start
+          if @@profile
+            require 'ruby-prof'
+            RubyProf.start
+          end
           t = Time.now
           diff = YDocx::Differ.new.diff(docs[0].contents, docs[1].contents)
           
@@ -113,9 +116,11 @@ Usage: #{self.command} file1 file2 output_file [options]
           html_doc.blocks << table
           
           printf "Diff time: %f\n", Time.now - t
-          #result = RubyProf.stop
-          #printer = RubyProf::GraphHtmlPrinter.new(result)
-          #printer.print(STDOUT)
+          if @@profile
+            result = RubyProf.stop
+            printer = RubyProf::GraphHtmlPrinter.new(result)
+            printer.print(STDOUT)
+          end
           
           docs.each do |doc|
             doc.to_html(true)
