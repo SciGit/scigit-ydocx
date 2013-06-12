@@ -191,10 +191,13 @@ module YDocx
       result[0] << tables[0]
       result[1] << tables[1]
     end
-    def convert_to_side(inline_blocks)
+    def convert_to_side(inline_blocks, line_nums = [])
       result = [[], []]
       pg = [1, 1]
-      inline_blocks.each do |dblock|
+      inline_blocks.each_with_index do |dblock, b|
+        if !line_nums[b].nil?
+          pg = line_nums[b]
+        end
         get_detail_blocks(dblock[0], dblock[1]).each do |block|
           type = ['=', '=']
           blocks = [[], []]
@@ -290,6 +293,7 @@ module YDocx
     end
     def diff_text(blocks)
       result = []
+      line_nums = []
       # Convert it into the usual format
       i = 0
       while i < blocks[0].length
@@ -300,10 +304,13 @@ module YDocx
         else
           bb = blocks[1][i]
         end
+        la = ba.nil? ? nil : ba.start_line
+        lb = bb.nil? ? nil : bb.start_line
         result << [convert_to_paragraphs(ba), convert_to_paragraphs(bb)]
+        line_nums << [la, lb]
         i += 1
       end
-      convert_to_side(result)
+      convert_to_side(result, line_nums)
     end
   end
 end
