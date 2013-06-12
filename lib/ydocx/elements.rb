@@ -300,7 +300,7 @@ module YDocx
       @rows = []
     end
     def to_markup
-      markup :p, (markup :table, @rows.map { |r| r.to_markup }, :class => 'docx')
+      markup :p, (markup :table, @rows.map { |r| r.to_markup })
     end
     def get_chunks
       @rows.map { |c| c.get_chunks }.reduce(:+)
