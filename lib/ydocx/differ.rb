@@ -304,8 +304,8 @@ module YDocx
         else
           bb = blocks[1][i]
         end
-        la = ba.nil? ? nil : ba.start_line
-        lb = bb.nil? ? nil : bb.start_line
+        la = ba && ba.start_line
+        lb = bb && bb.start_line
         result << [convert_to_paragraphs(ba), convert_to_paragraphs(bb)]
         line_nums << [la, lb]
         i += 1
