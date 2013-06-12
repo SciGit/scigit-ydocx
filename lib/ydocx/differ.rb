@@ -191,6 +191,46 @@ module YDocx
       result[0] << tables[0]
       result[1] << tables[1]
     end
+    def convert_to_side(inline_blocks)
+      result = [[], []]
+      pg = [1, 1]
+      inline_blocks.each do |dblock|
+        get_detail_blocks(dblock[0], dblock[1]).each do |block|
+          type = ['=', '=']
+          blocks = [[], []]
+          if block[0].empty?
+            blocks[1] = block[1]
+            type[1] = '+'
+          elsif block[1].empty?
+            blocks[0] = block[0]
+            type[0] = '-'
+          elsif block[0] != block[1]
+            # Each block should only contain 1 element
+            type = ['!', '!']
+            if block[0].first.is_a? Paragraph
+              get_paragraph_diff(block[0].first, block[1].first, blocks)
+            else
+              get_table_diff(block[0].first, block[1].first, blocks)
+            end
+          else
+            blocks[0] = block[0]
+            blocks[1] = block[1]
+          end
+          blocks = blocks.map do |block|
+            block.map { |b| Builder.build_html(b) }
+          end
+          for i in 0..1
+            if blocks[i].empty?
+              result[i] << nil
+            else
+              result[i] << Block.new(pg[i], type[i], blocks[i])
+              pg[i] += blocks[i].length
+            end
+          end
+        end
+      end
+      result
+    end
     def diff(doc1, doc2)
       blocks1 = doc1.blocks
       blocks2 = doc2.blocks
@@ -235,44 +275,35 @@ module YDocx
         end
       end
       
-      pg = [1, 1]
-      inline_blocks.each do |dblock|
-        get_detail_blocks(dblock[0], dblock[1]).each do |block|
-          type = ['=', '=']
-          blocks = [[], []]
-          if block[0].empty?
-            blocks[1] = block[1]
-            type[1] = '+'
-          elsif block[1].empty?
-            blocks[0] = block[0]
-            type[0] = '-'
-          elsif block[0] != block[1]
-            # Each block should only contain 1 element
-            type = ['!', '!']
-            if block[0].first.is_a? Paragraph
-              get_paragraph_diff(block[0].first, block[1].first, blocks)
-            else
-              get_table_diff(block[0].first, block[1].first, blocks)
-            end
-          else
-            blocks[0] = block[0]
-            blocks[1] = block[1]
-          end
-          blocks = blocks.map do |block|
-            block.map { |b| Builder.build_html(b) }
-          end
-          for i in 0..1
-            if blocks[i].empty?
-              result[:side][i] << nil
-            else
-              result[:side][i] << Block.new(pg[i], type[i], blocks[i])
-              pg[i] += blocks[i].length
-            end
-          end
-        end
-      end
-      
+      result[:side] = convert_to_side(inline_blocks)
       result 
+    end
+    def convert_to_paragraphs(block)
+      if block.nil?
+        return []
+      end
+      block.lines.map do |line|
+        p = Paragraph.new
+        p.groups = RunGroup.split_runs([Run.new(line)])
+        p
+      end
+    end
+    def diff_text(inline_blocks)
+      blocks = []
+      # Convert it into the usual format
+      i = 0
+      while i < blocks[0].length
+        ba = blocks[0][i]
+        bb = blocks[1][i+1]
+        if !ba.nil? && ba.type == '-' && !bb.nil? && bb.type == '+'
+          i += 1
+        else
+          bb = blocks[1][i]
+        end
+        blocks << [convert_to_paragraphs(ba), convert_to_paragraphs(bb)]
+        i += 1
+      end
+      convert_to_side(blocks)
     end
   end
 end
