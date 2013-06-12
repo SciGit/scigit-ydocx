@@ -288,8 +288,8 @@ module YDocx
         p
       end
     end
-    def diff_text(inline_blocks)
-      blocks = []
+    def diff_text(blocks)
+      result = []
       # Convert it into the usual format
       i = 0
       while i < blocks[0].length
@@ -300,10 +300,10 @@ module YDocx
         else
           bb = blocks[1][i]
         end
-        blocks << [convert_to_paragraphs(ba), convert_to_paragraphs(bb)]
+        result << [convert_to_paragraphs(ba), convert_to_paragraphs(bb)]
         i += 1
       end
-      convert_to_side(blocks)
+      convert_to_side(result)
     end
   end
 end
