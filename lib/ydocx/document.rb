@@ -3,8 +3,13 @@
 
 require 'pathname'
 require 'zip/zip'
-require 'RMagick'
+begin
+  require 'RMagick'
+rescue LoadError
+  puts 'RMagick not found'
+end
 require 'ydocx/parser'
+require 'ydocx/template_parser'
 require 'ydocx/builder'
 
 module YDocx
@@ -12,6 +17,32 @@ module YDocx
     attr_reader :builder, :contents, :images, :parser, :path
     def self.open(file, image_url = '')
       self.new(file, image_url)
+    end
+    def self.fill_template(file, data, output_file)
+      begin
+        path = Pathname.new file
+        zip = Zip::ZipFile.open(path.realpath)
+      rescue
+        return nil
+      end
+
+      doc = zip.find_entry('word/document.xml').get_input_stream
+      new_xml = TemplateParser.new(doc).replace(data)
+      doc.close
+
+      buffer = Zip::ZipOutputStream.write_buffer do |out|
+        zip.entries.each do |e|
+          out.put_next_entry(e.name)
+          unless e.name == 'word/document.xml'
+            out.write e.get_input_stream.read
+          else
+            out.write new_xml.to_xml(:indent => 0).gsub("\n", "")
+          end
+        end
+      end
+
+      File.open(output_file, "wb") { |f| f.write(buffer.string) }
+      zip.close
     end
     def initialize(file, image_url = '')
       @parser = nil

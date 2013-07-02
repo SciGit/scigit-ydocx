@@ -6,7 +6,10 @@ require 'htmlentities'
 require 'ydocx/markup_method'
 require 'ydocx/elements'
 require 'roman-numerals'
-require 'RMagick'
+begin
+  require 'RMagick'
+rescue LoadError
+end
 require 'murmurhash3'
 
 module YDocx
