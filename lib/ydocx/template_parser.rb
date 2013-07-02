@@ -39,7 +39,7 @@ module YDocx
           if t.name == 't'
             t.content.scan(/%([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
               parts = match[0].split('.')
-              if data[parts[0]].is_a? Array
+              if parts.length > 1
                 (@label_nodes[parts[0]] ||= []) << run
               end
             end
@@ -113,7 +113,7 @@ module YDocx
               if index > last_index
                 processed += t.content[last_index..index-1]
               end
-              processed += lookup(match[1], data, data_index) || match[0]
+              processed += lookup(match[1], data, data_index) || 'N/A'
               last_index = index + match[0].length
             end
             processed += t.content[last_index..-1]
@@ -125,12 +125,16 @@ module YDocx
 
       node.children.each do |child|
         if label = @node_label[child]
-          next_child = child
-          for i in 1..data[label].length-1
-            next_child = next_child.add_next_sibling(child.clone)
-            replace_runs(next_child, data, i)
+          if data[label].nil? || data[label].length == 0
+            child.remove
+          else
+            next_child = child
+            for i in 1..data[label].length-1
+              next_child = next_child.add_next_sibling(child.clone)
+              replace_runs(next_child, data, i)
+            end
+            replace_runs(child, data, 0)
           end
-          replace_runs(child, data, 0)
         else
           replace_runs(child, data, data_index)
         end
