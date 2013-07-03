@@ -102,23 +102,48 @@ module YDocx
     end
 
     def replace_runs(node, data, data_index = nil)
-      if node.name == 'r'
-        node.children.each do |t|
-          if t.name == 't'
-            last_index = 0
-            processed = ''
-            t.content.to_enum(:scan, /%([0-9a-zA-Z_\-\.\[\]]+)%/).each do
-              match = Regexp.last_match
-              index = match.pre_match.length
-              if index > last_index
-                processed += t.content[last_index..index-1]
-              end
-              processed += lookup(match[1], data, data_index) || 'N/A'
-              last_index = index + match[0].length
-            end
-            processed += t.content[last_index..-1]
-            t.content = processed
+      if node.name == 'p'
+        cur_child = 0
+        while cur_child < node.children.length
+          r = node.children[cur_child]
+          text = r.at_xpath('w:t')
+          if text.nil?
+            cur_child += 1
+            next
           end
+
+          prop = r.at_xpath('w:rPr')
+          prop = prop ? prop.to_s : ''
+          while cur_child + 1 < node.children.length
+            next_r = node.children[cur_child + 1]
+            next_prop = next_r.at_xpath('w:rPr')
+            next_prop = next_prop ? next_prop.to_s : ''
+            p text.content
+            p prop, next_prop
+            if next_r.name.start_with?('bookmark')
+              next_r.remove # These are inserted randomly, can't really tell what they do
+            elsif next_prop == prop && (next_text = next_r.at_xpath('w:t'))
+              text.content += next_text.content
+              next_r.remove
+            else
+              break
+            end
+          end
+
+          last_index = 0
+          processed = ''
+          text.content.to_enum(:scan, /%([0-9a-zA-Z_\-\.\[\]]+)%/).each do
+            match = Regexp.last_match
+            index = match.pre_match.length
+            if index > last_index
+              processed += text.content[last_index..index-1]
+            end
+            processed += lookup(match[1], data, data_index) || 'N/A'
+            last_index = index + match[0].length
+          end
+          processed += text.content[last_index..-1]
+          text.content = processed
+          cur_child += 1
         end
         return
       end

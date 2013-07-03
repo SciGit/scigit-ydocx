@@ -12,8 +12,11 @@ require 'ydocx/document'
 test_data = {
   'name' => 'Hanson Wang',
   'company' => 'SciGit',
+  'accountNumber' => '1234567890',
   'address' => '123 Fake Street',
+  'cityAndProvince' => 'Toronto, ON',
   'email' => 'test@test.com',
+  'phone' => '123-456-7890',
   'website' => 'www.scigit.com',
   'clientContacts' => [
     {
