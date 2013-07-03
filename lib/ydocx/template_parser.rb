@@ -33,6 +33,18 @@ module YDocx
       end
     end
 
+    def stringify(obj)
+      if obj.nil?
+        return 'N/A'
+      elsif obj.is_a? Hash
+        # checkbox
+        true_keys = obj.select { |k,v| v }.keys
+        return true_keys.join(', ')
+      else
+        return obj.to_s
+      end
+    end
+
     def group_values(node, data)
       node.xpath('.//w:r').each do |run|
         run.children.each do |t|
@@ -118,8 +130,6 @@ module YDocx
             next_r = node.children[cur_child + 1]
             next_prop = next_r.at_xpath('w:rPr')
             next_prop = next_prop ? next_prop.to_s : ''
-            p text.content
-            p prop, next_prop
             if next_r.name.start_with?('bookmark')
               next_r.remove # These are inserted randomly, can't really tell what they do
             elsif next_prop == prop && (next_text = next_r.at_xpath('w:t'))
@@ -138,7 +148,7 @@ module YDocx
             if index > last_index
               processed += text.content[last_index..index-1]
             end
-            processed += lookup(match[1], data, data_index) || 'N/A'
+            processed += stringify(lookup(match[1], data, data_index))
             last_index = index + match[0].length
           end
           processed += text.content[last_index..-1]

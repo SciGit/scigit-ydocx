@@ -22,10 +22,12 @@ test_data = {
     {
       'name' => 'Doug Sherk',
       'email' => 'doug@sherk.me',
+      'checkboxFields' => {'a' => true, 'b' => false, 'c' => true}
     },
     {
       'name' => 'Eric Ho',
       'email' => 'eric@scigit.com',
+      'checkboxFields' => {'asdf' => true, 'ghij' => true, 'c' => false}
     }
   ]
 }
