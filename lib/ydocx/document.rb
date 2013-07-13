@@ -18,7 +18,7 @@ module YDocx
     def self.open(file, image_url = '')
       self.new(file, image_url)
     end
-    def self.fill_template(file, data, output_file)
+    def self.fill_template(file, data, fields, output_file)
       begin
         path = Pathname.new file
         zip = Zip::ZipFile.open(path.realpath)
@@ -27,7 +27,7 @@ module YDocx
       end
 
       doc = zip.find_entry('word/document.xml').get_input_stream
-      new_xml = TemplateParser.new(doc).replace(data)
+      new_xml = TemplateParser.new(doc, fields).replace(data)
       doc.close
 
       buffer = Zip::ZipOutputStream.write_buffer do |out|

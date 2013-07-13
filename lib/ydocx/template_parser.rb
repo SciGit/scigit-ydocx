@@ -5,28 +5,66 @@ require 'nokogiri'
 
 module YDocx
   class TemplateParser
-    def initialize(doc)
+    def initialize(doc, fields)
       @label_nodes = {}
       @label_root = {}
       @node_label = {}
       @doc = doc
+      @fields = {}
+      fields.each do |field|
+        if field[:type].is_a? Array
+          store = field[:id][-1] == 's' ? (@fields[field[:id]] = {}) : @fields
+          field[:type].each do |subfield|
+            store[subfield[:id]] = subfield
+          end
+        else
+          @fields[field[:id]] = field
+        end
+      end
     end
 
     def replace(data)
       doc = Nokogiri::XML.parse(@doc)
+      merge_runs(doc)
       group_values(doc.at_xpath('//w:document//w:body'), data)
       replace_runs(doc.at_xpath('//w:document//w:body'), data)
       return doc
     end
 
+    def get_value(val, field)
+      if val.nil?
+        return val
+      elsif field[:type] == 'radio'
+        return field[:options][val]
+      elsif field[:type] == 'currency'
+        return '$' + val
+      else
+        return val
+      end
+    end
+
     def lookup(str, data, data_index = nil)
       parts = str.split('.')
       if parts.length == 1
-        return data[parts[0]]
+        if @fields[parts[0]].nil?
+          return nil
+        else
+          return get_value(data[parts[0]], @fields[parts[0]])
+        end
       else
         # only handle 2 parts for now
-        if data[parts[0]].is_a?(Array) && !data_index.nil?
-          return data[parts[0]][data_index] && data[parts[0]][data_index][parts[1]]
+        if @fields[parts[0]].nil?
+          return nil
+        elsif @fields[parts[0]][:type].nil? && !data_index.nil?
+          return data[parts[0]] && data[parts[0]][data_index] &&
+                 get_value(data[parts[0]][data_index][parts[1]], @fields[parts[0]][parts[1]])
+        elsif @fields[parts[0]][:type] == 'checkbox'
+          if @fields[parts[0]][:options][parts[1]].nil?
+            return nil
+          else
+            return (data[parts[0]] && data[parts[0]][parts[1]] ? '&#9632; ' : '&#9633;')  + ' ' +
+                @fields[parts[0]][:options][parts[1]]
+          end
         else
           return nil
         end
@@ -45,6 +83,41 @@ module YDocx
       end
     end
 
+    def merge_runs(node)
+      node.xpath('.//w:p').each do |p|
+        cur_child = 0
+        while cur_child < p.children.length
+          r = p.children[cur_child]
+          text = r.at_xpath('w:t')
+          if text.nil?
+            cur_child += 1
+            next
+          end
+
+          prop = r.at_xpath('w:rPr')
+          prop = prop ? prop.to_s : ''
+          while cur_child + 1 < p.children.length
+            next_r = p.children[cur_child + 1]
+            next_prop = next_r.at_xpath('w:rPr')
+            next_prop = next_prop ? next_prop.to_s : ''
+            if next_r.name.start_with?('bookmark') || next_r.name == 'proofErr'
+              next_r.remove # These are inserted randomly, can't really tell what they do
+            elsif next_prop == prop && (next_text = next_r.at_xpath('w:t'))
+              text.content += next_text.content
+              if next_text['xml:space']
+                text['xml:space'] = next_text['xml:space']
+              end
+              next_r.remove
+            else
+              break
+            end
+          end
+
+          cur_child += 1
+        end
+      end
+    end
+
     def group_values(node, data)
       node.xpath('.//w:r').each do |run|
         run.children.each do |t|
@@ -52,7 +125,9 @@ module YDocx
             t.content.scan(/%([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
               parts = match[0].split('.')
               if parts.length > 1
-                (@label_nodes[parts[0]] ||= []) << run
+                if !@fields[parts[0]][:id]
+                  (@label_nodes[parts[0]] ||= []) << run
+                end
               end
             end
           end
@@ -114,7 +189,36 @@ module YDocx
     end
 
     def replace_runs(node, data, data_index = nil)
+      # process if statements
+      if node.name == 'tbl'
+        if tr = node.at_xpath('w:tr')
+          if tc = tr.at_xpath('w:tc')
+            if t = tc.at_xpath('.//w:t')
+              t.content.scan(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+                value = lookup(match[0], data, data_index)
+                if value.nil? || value.empty? || value.downcase == 'no'
+                  node.remove
+                  return
+                end
+              end
+              t.inner_html = t.content.gsub(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
+            end
+          end
+        end
+      end
+
       if node.name == 'p'
+        if t = node.at_xpath('.//w:t')
+          t.content.scan(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+            value = lookup(match[0], data, data_index)
+            if value.nil? || value.empty? || value.downcase == 'no'
+              node.remove
+              return
+            end
+          end
+          t.inner_html = t.content.gsub(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
+        end
+
         cur_child = 0
         while cur_child < node.children.length
           r = node.children[cur_child]
@@ -122,22 +226,6 @@ module YDocx
           if text.nil?
             cur_child += 1
             next
-          end
-
-          prop = r.at_xpath('w:rPr')
-          prop = prop ? prop.to_s : ''
-          while cur_child + 1 < node.children.length
-            next_r = node.children[cur_child + 1]
-            next_prop = next_r.at_xpath('w:rPr')
-            next_prop = next_prop ? next_prop.to_s : ''
-            if next_r.name.start_with?('bookmark')
-              next_r.remove # These are inserted randomly, can't really tell what they do
-            elsif next_prop == prop && (next_text = next_r.at_xpath('w:t'))
-              text.content += next_text.content
-              next_r.remove
-            else
-              break
-            end
           end
 
           last_index = 0
@@ -152,7 +240,7 @@ module YDocx
             last_index = index + match[0].length
           end
           processed += text.content[last_index..-1]
-          text.content = processed
+          text.inner_html = processed
           cur_child += 1
         end
         return

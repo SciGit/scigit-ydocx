@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # coding: utf-8
 
+require 'json'
+
 if $0 == __FILE__
   require 'pathname'
   root = Pathname.new(__FILE__).realpath.parent.parent
@@ -9,32 +11,21 @@ end
 
 require 'ydocx/document'
 
-test_data = {
-  'name' => 'Hanson Wang',
-  'company' => 'SciGit',
-  'accountNumber' => '1234567890',
-  'address' => '123 Fake Street',
-  'cityAndProvince' => 'Toronto, ON',
-  'email' => 'test@test.com',
-  'phone' => '123-456-7890',
-  'website' => 'www.scigit.com',
-  'clientContacts' => [
-    {
-      'name' => 'Doug Sherk',
-      'email' => 'doug@sherk.me',
-      'checkboxFields' => {'a' => true, 'b' => false, 'c' => true}
-    },
-    {
-      'name' => 'Eric Ho',
-      'email' => 'eric@scigit.com',
-      'checkboxFields' => {'asdf' => true, 'ghij' => true, 'c' => false}
-    }
-  ]
-}
+test_data = {accountNumber: {"updated_at"=>1373675917863, "value"=>"ewqewfd"}, address: {"updated_at"=>1373675917863, "value"=>"ewfwf"}, americanPercent: {"updated_at"=>1373676315101, "value"=>"11"}, annualGrossReceipts: {"updated_at"=>1373676315101, "value"=>"11"}, annualPayroll: {"updated_at"=>1373676315101, "value"=>"11"}, autoSchedules: {"updated_at"=>1373676532476, "value"=>[{"itemNumber"=>"11111", "unitNumber"=>"1111", "owner"=>"Contractor", "financeCompany"=>"fdsgd", "year"=>"1990", "make"=>"fucker", "model"=>"fucker", "serialNumber"=>"fuckeee19378921y", "plateNumber"=>"1t7816871", "colour"=>"yellow piss", "dateAdded"=>"1990", "policyExpiry"=>"1992"}]}, baseUnits: {"updated_at"=>1373676315101, "value"=>"11.11"}, burglarAlarm: {"updated_at"=>1373676495879, "value"=>"Complete"}, businessStartDate: {"updated_at"=>1373676315101, "value"=>"forever"}, businessType: {"updated_at"=>1373676051427, "value"=>"Trust"}, canadianPercent: {"updated_at"=>1373676315101, "value"=>"11"}, city: {"updated_at"=>1373675917863, "value"=>"Kitchener"}, claimsInfos: {"updated_at"=>1373675960277, "value"=>[{"lossDate"=>"1990-01-28", "claimType"=>"fucker", "description"=>"qfveqr", "amountPaid"=>"132", "reserve"=>"112"}]}, clientContacts: {"updated_at"=>1373675917863, "value"=>[{"name"=>"dickwhore dickface", "title"=>"mr.", "position"=>"Accountant", "phone"=>"6043272991", "email"=>"erich0128@gmail.com", "other"=>"ddwfdwe"}]}, company: {"updated_at"=>1373676041730, "value"=>"sddsdsdd"}, constructionArea: {"updated_at"=>1373676315101, "value"=>"324567"}, constructionAreaUnit: {"updated_at"=>1373676315101, "value"=>""}, constructionBasement: {"updated_at"=>1373676315101, "value"=>"No basement"}, constructionElectrical: {"updated_at"=>1373676315101, "value"=>"Breakers"}, constructionFloors: {"updated_at"=>1373676315101, "value"=>"Masonry"}, constructionHeating: {"updated_at"=>1373676495878, "value"=>"Furnace (central)"}, constructionPlumbing: {"updated_at"=>1373676495878,"value"=>"Copper/plastic PVC mix"}, constructionRoof: {"updated_at"=>1373676315101, "value"=>"Frame on steel joists"}, constructionRoofCovering: {"updated_at"=>1373676315101, "value"=>"Rubber/Polymer"}, constructionStories: {"updated_at"=>1373676315101, "value"=>"13"}, constructionWalls: {"updated_at"=>1373676315101, "value"=>"Fire resistive"}, country: {"updated_at"=>1373675917863, "value"=>"dfsafdsf"}, coverageFrom: {"updated_at"=>1373676315101, "value"=>"1990"}, coveragePercent: {"updated_at"=>1373676495879, "value"=>"1990"}, coverageSchedules: {"updated_at"=>1373676495879, "value"=>[{"category" => "Property", "type"=>"Gross Rentals", "options" => "building", "replacementCost" => "123", "deductible" => "345", "coIns" => "80/20", "limit" => "2345", "subtype" => "broad"}, {"category"=>"Property", "type" => "Building Equipment"}]}, coverageTo: {"updated_at"=>1373676315101, "value"=>"1992"}, covered: {"updated_at"=>1373676315101, "value"=>"WCB"}, crimeProtectionOther: {"updated_at"=>1373676495879, "value"=>"^ the list is painful"}, dateKnown: {"updated_at"=>1373676581000, "value"=>"1990"}, descriptionOperations: {"updated_at"=>1373675931747, "value"=>"fucking whore"}, emailAddress: {"updated_at"=>1373675917863, "value"=>"fsdggggwrg@email.com"}, exposuresBehind: {"updated_at"=>1373676495879, "value"=>"unclear"}, exposuresClear: {"updated_at"=>1373676495879, "value"=>{"yes"=>nil}}, exposuresLeft: {"updated_at"=>1373676495879, "value"=>"cows"},exposuresRight: {"updated_at"=>1373676495879, "value"=>"clear"}, extinguishingAgent: {"updated_at"=>1373676495878, "value"=>"dryChemical"}, fax: {"updated_at"=>1373675917863, "value"=>"3415234531"}, fireAlarm: {"updated_at"=>1373676495879,"value"=>"Monitoring Station (Full)"}, fireGrade: {"updated_at"=>1373676315101,"value"=>"pussy grade."}, foreignPercent: {"updated_at"=>1373676315101, "value"=>"11"}, fullTimeEmployees: {"updated_at"=>1373676315101, "value"=>"122"}, industryCode: {"updated_at"=>1373675931747, "value"=>"245522"}, inspectedBy: {"updated_at"=>1373676315101, "value"=>"dickwhore"}, inspection: {"updated_at"=>1373676315101, "value"=>{"yes"=>nil}}, inspectionDate: {"updated_at"=>1373676315101, "value"=>"1990"}, liquorLiability: {"updated_at"=>1373676315101, "value"=>"no"}, liquorNotes: {"updated_at"=>1373676315101, "value"=>"im an alcoholic"}, locationAddress: {"updated_at"=>1373676315101, "value"=>"vghkd"}, locationCity: {"updated_at"=>1373676315101, "value"=>"pokemon"}, locationCountry: {"updated_at"=>1373676315101, "value"=>"pokemon"}, locationNumber: {"updated_at"=>1373676315101, "value"=>"123456"}, locationPostalCode: {"updated_at"=>1373676315101, "value"=>"1234567"}, locationProvinceState: {"updated_at"=>1373676315101, "value"=>"pokemon"},locationType: {"updated_at"=>1373676315101, "value"=>"Urban"}, lossPayees: {"updated_at"=>1373676495879, "value"=>"whorefuck fuckwhore"}, lossPayeesType: {"updated_at"=>1373676495879, "value"=>"mortgage"}, municipalFireZone: {"updated_at"=>1373676315101, "value"=>"Zone 2"}, name: {"updated_at"=>1373675825712, "value"=>"dssdds"}, newClient: {"updated_at"=>1373676581000, "value"=>{"yes"=>true}}, notes: {"updated_at"=>1373676495879, "value"=>"fdabgdsg"}, occupancyInsured: {"updated_at"=>1373676495879, "value"=>"14"}, occupancyOthers: {"updated_at"=>1373676495879, "value"=>"12"}, otherFireInfo: {"updated_at"=>1373676495879, "value"=>"pussy."}, packageName: {"updated_at"=>1373676315101, "value"=>"my penis"}, partTimeEmployees: {"updated_at"=>1373676315101, "value"=>"122"}, paymentType: {"updated_at"=>1373676315101, "value"=>"Company Bill"}, phone: {"updated_at"=>1373675917863, "value"=>"2314132514"}, postalCode: {"updated_at"=>1373675917863, "value"=>"fwdsfsdqa"}, prevBroker: {"updated_at"=>1373676315101, "value"=>"jbdjh"}, prevInsurer: {"updated_at"=>1373676315101, "value"=>"ghjgb"}, prevPolicyNumber: {"updated_at"=>1373676315101, "value"=>"1221413"}, prevPremium: {"updated_at"=>1373676315101, "value"=>"123"}, prevPremiumMonthlyOrAnnual: {"updated_at"=>1373676315101, "value"=>"monthly"}, prevTermEnd: {"updated_at"=>1373676315101, "value"=>"1990"}, prevTermStart: {"updated_at"=>1373676315101, "value"=>"1990"}, properties: {"updated_at"=>1373676572464, "value"=>[{"type"=>"Motor Truck Cargo", "itemNumber"=>"fesadgferg", "year"=>1190, "make"=>"fadsfdasf", "model"=>"fseafdewqf", "serialNumber"=>"feasfqew", "description"=>"efewFQFEW", "limit"=>"QFEWFEW"}]}, protectionTypes: {"updated_at"=>1373676495879, "value"=>{"concealed"=>true, "steelPost"=>true, "stockSecured"=>true}}, province: {"updated_at"=>1373675917863, "value"=>"cdfsdadsf"}, receiptSplitsFood: {"updated_at"=>1373676315101, "value"=>"45678"}, receiptSplitsLiquor: {"updated_at"=>1373676315101, "value"=>"1234567890"}, receiptSplitsOther: {"updated_at"=>1373676315101, "value"=>"456"}, renewalExplanation: {"updated_at"=>1373676315101, "value"=>"cause im a dick."}, renewalOffered: {"updated_at"=>1373676315101, "value"=>"no"}, renovationsHeating: {"updated_at"=>1373676495878, "value"=>{"yes"=>true}}, renovationsHeatingCompletePartial:{"updated_at"=>1373676495878, "value"=>"partial"}, renovationsHeatingYear: {"updated_at"=>1373676495878, "value"=>"fgdgda"}, renovationsPlumbing: {"updated_at"=>1373676495878, "value"=>{"yes"=>true}}, renovationsPlumbingCompletePartial: {"updated_at"=>1373676495878, "value"=>"partial"}, renovationsPlumbingYear: {"updated_at"=>1373676495878, "value"=>"bdfg"}, renovationsRoof: {"updated_at"=>1373676495878, "value"=>{"yes"=>true}}, renovationsRoofCompletePartial: {"updated_at"=>1373676495878, "value"=>"complete"}, renovationsRoofYear: {"updated_at"=>1373676495878, "value"=>"fdsgdfsg"}, riskInfoLimit: {"updated_at"=>1373676315101, "value"=>"2.1"}, riskInfoNotes: {"updated_at"=>1373676315101, "value"=>"hsedfgjhjk"}, riskInfoType: {"updated_at"=>1373676315101, "value"=>"Commercial Equipment"}, riskSeverity: {"updated_at"=>1373676315101, "value"=>"poor"}, safeClass: {"updated_at"=>1373676495879, "value"=>"1"}, safeType: {"updated_at"=>1373676495879, "value"=>"fire"}, specialCircumstances: {"updated_at"=>1373676495879, "value"=>"i like fuckers."}, standpipe: {"updated_at"=>1373676495879, "value"=>{"yes"=>true}}, units: {"updated_at"=>1373676315101, "value"=>"111"}, website: {"updated_at"=>1373675917863, "value"=>"www.cdscdevcadsv"}, yearBuilt: {"updated_at"=>1373676315101, "value"=>"1990"}}
+
+data = {}
+test_data.each do |key, val|
+  if val.is_a?(Hash) && !val['value'].nil?
+    data[key] = val['value']
+  end
+end
+data = JSON.parse(data.to_json)
+
+load 'client.rb'
 
 argv = ARGV.dup
 if !argv[0].nil?
-  YDocx::Document.fill_template(argv[0], test_data, argv[1] || (File.basename(argv[0], '.docx') + '.out.docx'))
+  YDocx::Document.fill_template(argv[0], data, Client::FIELDS, argv[1] || (File.basename(argv[0], '.docx') + '.out.docx'))
   puts 'Successfully filled template with data.'
 else
   puts 'usage: templatex template_file output_file'
