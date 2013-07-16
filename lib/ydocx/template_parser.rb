@@ -125,7 +125,7 @@ module YDocx
             t.content.scan(/%([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
               parts = match[0].split('.')
               if parts.length > 1
-                if !@fields[parts[0]][:id]
+                if @fields[parts[0]] && !@fields[parts[0]][:id]
                   (@label_nodes[parts[0]] ||= []) << run
                 end
               end
