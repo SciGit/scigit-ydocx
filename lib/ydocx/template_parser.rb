@@ -5,12 +5,17 @@ require 'nokogiri'
 
 module YDocx
   class TemplateParser
-    def initialize(doc, fields)
+    OPTION_DEFAULTS = {
+      :placeholder => 'None or N/A'
+    }
+
+    def initialize(doc, fields, options)
       @label_nodes = {}
       @label_root = {}
       @node_label = {}
       @doc = doc
       @fields = {}
+      @options = options.merge(OPTION_DEFAULTS)
       fields.each do |field|
         if field[:type].is_a? Array
           store = field[:id][-1] == 's' ? (@fields[field[:id]] = {}) : @fields
@@ -73,7 +78,7 @@ module YDocx
 
     def stringify(obj)
       if obj.nil?
-        return 'N/A'
+        return @options[:placeholder]
       elsif obj.is_a? Hash
         # checkbox
         true_keys = obj.select { |k,v| v }.keys
