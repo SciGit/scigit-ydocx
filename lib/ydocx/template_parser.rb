@@ -9,6 +9,8 @@ module YDocx
       :placeholder => 'None or N/A'
     }
 
+    VAR_PATTERN = /%([0-9a-zA-Z_\-\.\[\]]+)(|[^%\+]*)?(\+[^%]*)?%/
+
     def initialize(doc, fields, options)
       @label_nodes = {}
       @label_root = {}
@@ -16,14 +18,16 @@ module YDocx
       @doc = doc
       @fields = {}
       @options = options.merge(OPTION_DEFAULTS)
+      get_fields(@fields, fields)
+    end
+
+    def get_fields(store, fields)
       fields.each do |field|
         if field[:type].is_a? Array
-          store = field[:id][-1] == 's' ? (@fields[field[:id]] = {}) : @fields
-          field[:type].each do |subfield|
-            store[subfield[:id]] = subfield
-          end
+          substore = field[:id][-1] == 's' ? (store[field[:id]] = {}) : store
+          get_fields(substore, field[:type])
         else
-          @fields[field[:id]] = field
+          store[field[:id]] = field
         end
       end
     end
@@ -52,6 +56,7 @@ module YDocx
       parts = str.split('.')
       if parts.length == 1
         if @fields[parts[0]].nil?
+          p str
           return nil
         else
           return get_value(data[parts[0]], @fields[parts[0]])
@@ -59,32 +64,35 @@ module YDocx
       else
         # only handle 2 parts for now
         if @fields[parts[0]].nil?
+          p str
           return nil
         elsif @fields[parts[0]][:type].nil? && !data_index.nil?
           return data[parts[0]] && data[parts[0]][data_index] &&
                  get_value(data[parts[0]][data_index][parts[1]], @fields[parts[0]][parts[1]])
         elsif @fields[parts[0]][:type] == 'checkbox'
           if @fields[parts[0]][:options][parts[1]].nil?
+            p str
             return nil
           else
             return (data[parts[0]] && data[parts[0]][parts[1]] ? '&#9632; ' : '&#9633;')  + ' ' +
                 @fields[parts[0]][:options][parts[1]]
           end
         else
+          p str
           return nil
         end
       end
     end
 
-    def stringify(obj)
+    def stringify(obj, default = nil, after = nil)
       if obj.nil?
-        return @options[:placeholder]
+        return default || @options[:placeholder]
       elsif obj.is_a? Hash
         # checkbox
         true_keys = obj.select { |k,v| v }.keys
-        return true_keys.join(', ')
+        return true_keys.join(', ') + (after || '')
       else
-        return obj.to_s
+        return obj.to_s + (after || '')
       end
     end
 
@@ -108,6 +116,19 @@ module YDocx
             if next_r.name.start_with?('bookmark') || next_r.name == 'proofErr'
               next_r.remove # These are inserted randomly, can't really tell what they do
             elsif next_prop == prop && (next_text = next_r.at_xpath('w:t'))
+              whitespace = false
+              next_r.children.each do |c|
+                if c.name == 'br' || c.name == 'tab'
+                  whitespace = true
+                  break
+                elsif c == next_text
+                  break
+                end
+              end
+              if whitespace
+                break
+              end
+
               text.content += next_text.content
               if next_text['xml:space']
                 text['xml:space'] = next_text['xml:space']
@@ -127,7 +148,7 @@ module YDocx
       node.xpath('.//w:r').each do |run|
         run.children.each do |t|
           if t.name == 't'
-            t.content.scan(/%([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+            t.content.scan(VAR_PATTERN).each do |match|
               parts = match[0].split('.')
               if parts.length > 1
                 if @fields[parts[0]] && !@fields[parts[0]][:id]
@@ -171,7 +192,7 @@ module YDocx
           end
 
           low = 0
-          high = node_paths.map { |p| p.length }.max - 1
+          high = node_paths.map { |p| p.length }.min - 1
           while low <= high
             mid = (low + high + 1) / 2
             if node_paths.all? { |path| path[mid] == node_paths[0][mid] }
@@ -188,6 +209,37 @@ module YDocx
               @label_root[label] = node
               @node_label[node] = label
             end
+          else
+            # Create a fake node containing all these paragraphs (and everything in between)
+            marked = Hash[node_paths.map { |p| [p[0], true] }]
+            body = node_paths[0][0].parent
+            first_child = -1
+            last_child = -1
+            body.children.each_with_index do |c, i|
+              if marked[c]
+                if first_child == -1
+                  first_child = i
+                end
+                last_child = i
+              end
+            end
+
+            after = body.children[last_child + 1]
+
+            group_node = Nokogiri::XML::Node.new('templateGroup', body.document)
+            body.children[first_child..last_child].each do |n|
+              n.remove
+              group_node.add_child n
+            end
+
+            if after.nil?
+              body.children.after group_node
+            else
+              after.before group_node
+            end
+
+            @node_label[group_node] = label
+            @label_root[label] = group_node
           end
         end
       end
@@ -199,14 +251,16 @@ module YDocx
         if tr = node.at_xpath('w:tr')
           if tc = tr.at_xpath('w:tc')
             if t = tc.at_xpath('.//w:t')
-              t.content.scan(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
-                value = lookup(match[0], data, data_index)
+              value = ''
+              t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+                value = lookup(match[1], data, data_index)
                 if value.nil? || value.empty? || value.downcase == 'no'
                   node.remove
                   return
                 end
               end
               t.inner_html = t.content.gsub(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
+              t.inner_html = t.content.gsub(/%showif ([0-9a-zA-Z_\-\.\[\]]+)%/, value)
             end
           end
         end
@@ -214,14 +268,16 @@ module YDocx
 
       if node.name == 'p'
         if t = node.at_xpath('.//w:t')
-          t.content.scan(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
-            value = lookup(match[0], data, data_index)
+          value = ''
+          t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+            value = lookup(match[1], data, data_index)
             if value.nil? || value.empty? || value.downcase == 'no'
               node.remove
               return
             end
           end
           t.inner_html = t.content.gsub(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
+          t.inner_html = t.content.gsub(/%showif ([0-9a-zA-Z_\-\.\[\]]+)%/, value)
         end
 
         cur_child = 0
@@ -235,13 +291,13 @@ module YDocx
 
           last_index = 0
           processed = ''
-          text.content.to_enum(:scan, /%([0-9a-zA-Z_\-\.\[\]]+)%/).each do
+          text.content.to_enum(:scan, VAR_PATTERN).each do
             match = Regexp.last_match
             index = match.pre_match.length
             if index > last_index
               processed += text.content[last_index..index-1]
             end
-            processed += stringify(lookup(match[1], data, data_index))
+            processed += stringify(lookup(match[1], data, data_index), match[2] && match[2][1..-1], match[3] && match[3][1..-1])
             last_index = index + match[0].length
           end
           processed += text.content[last_index..-1]
@@ -251,21 +307,36 @@ module YDocx
         return
       end
 
+      prev_child = nil
       node.children.each do |child|
         if label = @node_label[child]
           if data[label].nil? || data[label].length == 0
             child.remove
           else
-            next_child = child
-            for i in 1..data[label].length-1
-              next_child = next_child.add_next_sibling(child.clone)
+            master_copy = child.clone
+            child.remove
+
+            next_child = prev_child
+            for i in 0..data[label].length-1
+              if next_child.nil?
+                next_child = node.before master_copy.clone
+              else
+                next_child = next_child.add_next_sibling(master_copy.clone)
+              end
               replace_runs(next_child, data, i)
+              if node.name == 'templateGroup'
+                orig_child = next_child
+                orig_child.children.each do |subchild|
+                  next_child = next_child.add_next_sibling subchild
+                end
+                orig_child = remove
+              end
             end
-            replace_runs(child, data, 0)
           end
         else
           replace_runs(child, data, data_index)
         end
+        prev_child = child
       end
     end
   end
