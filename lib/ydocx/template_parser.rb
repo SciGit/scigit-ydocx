@@ -288,16 +288,18 @@ module YDocx
           if tc = tr.at_xpath('w:tc')
             if t = tc.at_xpath('.//w:t')
               value = ''
-              t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
-                value = lookup(match[1], data, data_index)
+              t.content.scan(/%(show)?if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+                value = lookup(match[2], data, data_index)
                 value = value && value.first
-                if is_false(value)
+                bool = is_false(value)
+                bool = !bool if match[1]
+                if bool
                   node.remove
                   return
                 end
               end
-              t.inner_html = t.content.gsub(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
-              t.inner_html = t.content.gsub(/%showif ([0-9a-zA-Z_\-\.\[\]]+)%/, value)
+              t.inner_html = t.content.gsub(/%if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
+              t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value || '')
             end
           end
         end
@@ -306,16 +308,22 @@ module YDocx
       if node.name == 'p'
         if t = node.at_xpath('.//w:t')
           value = ''
-          t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
-            value = lookup(match[1], data, data_index)
+          t.content.scan(/%(show)?if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
+            value = lookup(match[2], data, data_index)
             value = value && value.first
-            if is_false(value)
-              node.remove
+            bool = is_false(value)
+            bool = !bool if match[1]
+            if bool
+              if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
+                node.children.remove
+              else
+                node.remove
+              end
               return
             end
           end
-          t.inner_html = t.content.gsub(/%if ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
-          t.inner_html = t.content.gsub(/%showif ([0-9a-zA-Z_\-\.\[\]]+)%/, value)
+          t.inner_html = t.content.gsub(/%if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
+          t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value || '')
         end
 
         cur_child = 0
