@@ -37,6 +37,8 @@ module YDocx
         if data['value']
           return unwrap(data['value'])
         else
+          puts "%%%"
+          puts data
           data.each do |k, v|
             data[k] = unwrap(v)
           end
