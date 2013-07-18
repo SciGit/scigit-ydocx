@@ -32,67 +32,85 @@ module YDocx
       end
     end
 
+    def unwrap(data)
+      if data.is_a?(Hash)
+        if data['value']
+          return unwrap(data['value'])
+        else
+          data.each do |k, v|
+            data[k] = unwrap(v)
+          end
+        end
+      elsif data.is_a?(Array)
+        return data.map { |d| unwrap(d) }
+      end
+
+      return data
+    end
+
     def replace(data)
+      data = unwrap(data)
+
       doc = Nokogiri::XML.parse(@doc)
       merge_runs(doc)
-      group_values(doc.at_xpath('//w:document//w:body'), data)
-      replace_runs(doc.at_xpath('//w:document//w:body'), data)
+      root = doc.at_xpath('//w:document//w:body')
+      group_values(root, data)
+      replace_runs(root, data)
       return doc
     end
 
-    def get_value(val, field)
-      if val.nil?
-        return val
-      elsif field[:type] == 'radio'
-        return field[:options][val]
-      elsif field[:type] == 'currency'
-        return '$' + val
+    def rec_lookup(parts, fields, data, data_index = [])
+      if parts.length == 1
+        if fields[:type] == 'checkbox'
+          return [data && data[parts[0]], fields, parts[0]]
+        elsif fields[parts[0]].nil?
+          #p parts
+          return nil
+        else
+          return [data && data[parts[0]], fields[parts[0]]]
+        end
       else
-        return val
+        if fields[parts[0]].nil?
+          #p parts
+          return nil
+        elsif fields[parts[0]][:type].nil?
+          data = data && data[parts[0]]
+          if data.is_a?(Hash) && !data['value'].nil?
+            data = data['value']
+          end
+          return rec_lookup(parts[1..-1], fields[parts[0]], data && data[data_index[0]], data_index[1..-1])
+        else
+          return rec_lookup(parts[1..-1], fields[parts[0]], data && data[parts[0]], data_index)
+        end
       end
     end
 
-    def lookup(str, data, data_index = nil)
+    def lookup(str, data, data_index = [])
       parts = str.split('.')
-      if parts.length == 1
-        if @fields[parts[0]].nil?
-          p str
-          return nil
-        else
-          return get_value(data[parts[0]], @fields[parts[0]])
-        end
-      else
-        # only handle 2 parts for now
-        if @fields[parts[0]].nil?
-          p str
-          return nil
-        elsif @fields[parts[0]][:type].nil? && !data_index.nil?
-          return data[parts[0]] && data[parts[0]][data_index] &&
-                 get_value(data[parts[0]][data_index][parts[1]], @fields[parts[0]][parts[1]])
-        elsif @fields[parts[0]][:type] == 'checkbox'
-          if @fields[parts[0]][:options][parts[1]].nil?
-            p str
-            return nil
-          else
-            return (data[parts[0]] && data[parts[0]][parts[1]] ? '&#9632; ' : '&#9633;')  + ' ' +
-                @fields[parts[0]][:options][parts[1]]
-          end
-        else
-          p str
-          return nil
-        end
-      end
+      rec_lookup(parts, @fields, data, data_index)
     end
 
     def stringify(obj, default = nil, after = nil)
       if obj.nil?
         return default || @options[:placeholder]
-      elsif obj.is_a? Hash
-        # checkbox
-        true_keys = obj.select { |k,v| v }.keys
-        return true_keys.join(', ') + (after || '')
+      end
+
+      val = obj[0]
+      field = obj[1]
+      if field[:type] == 'checkbox'
+        return (val ? '&#9632; ' : '&#9633;')  + ' ' + field[:options][obj[2]]
+      end
+
+      if val.nil?
+        return default || @options[:placeholder]
+      end
+
+      if field[:type] == 'radio'
+        return field[:options][val]
+      elsif field[:type] == 'currency'
+        return '$' + val
       else
-        return obj.to_s + (after || '')
+        return val.to_s
       end
     end
 
@@ -151,8 +169,15 @@ module YDocx
             t.content.scan(VAR_PATTERN).each do |match|
               parts = match[0].split('.')
               if parts.length > 1
-                if @fields[parts[0]] && !@fields[parts[0]][:id]
-                  (@label_nodes[parts[0]] ||= []) << run
+                field = @fields
+                parts.each_with_index do |p, i|
+                  field = field[p]
+                  if field.nil?
+                    break
+                  end
+                  if field[:id].nil?
+                    (@label_nodes[parts[0..i].join('.')] ||= []) << run
+                  end
                 end
               end
             end
@@ -178,6 +203,7 @@ module YDocx
           end
           if root = first_tr || first_p
             @label_root[label] = root
+            root['templateLabel'] = label
             @node_label[root] = label
           end
         else
@@ -207,6 +233,7 @@ module YDocx
             node = node_paths[0][low]
             if @node_label[node].nil?
               @label_root[label] = node
+              node['templateLabel'] = label
               @node_label[node] = label
             end
           else
@@ -238,6 +265,7 @@ module YDocx
               after.before group_node
             end
 
+            group_node['templateLabel'] = label
             @node_label[group_node] = label
             @label_root[label] = group_node
           end
@@ -245,7 +273,7 @@ module YDocx
       end
     end
 
-    def replace_runs(node, data, data_index = nil)
+    def replace_runs(node, data, data_index = [])
       # process if statements
       if node.name == 'tbl'
         if tr = node.at_xpath('w:tr')
@@ -254,6 +282,7 @@ module YDocx
               value = ''
               t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
                 value = lookup(match[1], data, data_index)
+                value = value && value.first
                 if value.nil? || value.empty? || value.downcase == 'no'
                   node.remove
                   return
@@ -271,7 +300,8 @@ module YDocx
           value = ''
           t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
             value = lookup(match[1], data, data_index)
-            if value.nil? || value.empty? || value.downcase == 'no'
+            value = value && value.first.to_s
+            if value.nil? || value.empty? || value.downcase == 'no' || value.downcase == 'false'
               node.remove
               return
             end
@@ -309,21 +339,24 @@ module YDocx
 
       prev_child = nil
       node.children.each do |child|
-        if label = @node_label[child]
-          if data[label].nil? || data[label].length == 0
+        if label = child['templateLabel']
+          dat = lookup(label, data, data_index)
+          dat = dat && dat.first
+
+          if dat.nil? || dat.length == 0
             child.remove
           else
             master_copy = child.clone
             child.remove
 
             next_child = prev_child
-            for i in 0..data[label].length-1
+            for i in 0..dat.length-1
               if next_child.nil?
                 next_child = node.before master_copy.clone
               else
                 next_child = next_child.add_next_sibling(master_copy.clone)
               end
-              replace_runs(next_child, data, i)
+              replace_runs(next_child, data, data_index + [i])
               if node.name == 'templateGroup'
                 orig_child = next_child
                 orig_child.children.each do |subchild|
