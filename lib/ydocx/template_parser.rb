@@ -299,7 +299,7 @@ module YDocx
                 end
               end
               t.inner_html = t.content.gsub(/%if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
-              t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value || '')
+              t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value.to_s)
             end
           end
         end
@@ -323,7 +323,7 @@ module YDocx
             end
           end
           t.inner_html = t.content.gsub(/%if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
-          t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value || '')
+          t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value.to_s)
         end
 
         cur_child = 0
