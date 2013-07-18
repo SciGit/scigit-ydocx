@@ -90,6 +90,14 @@ module YDocx
       rec_lookup(parts, @fields, data, data_index)
     end
 
+    def is_false(value)
+      if value.nil?
+        return true
+      end
+      value = value.to_s.downcase
+      return value.empty? || value == 'no' || value == 'false' || value == 'null'
+    end
+
     def stringify(obj, default = nil, after = nil)
       if obj.nil?
         return default || @options[:placeholder]
@@ -283,7 +291,7 @@ module YDocx
               t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
                 value = lookup(match[1], data, data_index)
                 value = value && value.first
-                if value.nil? || value.empty? || value.downcase == 'no'
+                if is_false(value)
                   node.remove
                   return
                 end
@@ -300,8 +308,8 @@ module YDocx
           value = ''
           t.content.scan(/%(show)?if ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
             value = lookup(match[1], data, data_index)
-            value = value && value.first.to_s
-            if value.nil? || value.empty? || value.downcase == 'no' || value.downcase == 'false'
+            value = value && value.first
+            if is_false(value)
               node.remove
               return
             end
