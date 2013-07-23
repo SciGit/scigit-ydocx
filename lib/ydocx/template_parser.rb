@@ -26,7 +26,7 @@ module YDocx
         if field[:type].is_a? Array
           substore = field[:id][-1] == 's' ? (store[field[:id]] = {}) : store
           get_fields(substore, field[:type])
-        else
+        elsif field[:id]
           store[field[:id]] = field
         end
       end
