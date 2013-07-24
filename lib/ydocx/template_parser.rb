@@ -193,7 +193,8 @@ module YDocx
         end
       end
 
-      @label_nodes.each do |label, nodes|
+      # Must be processed from inner to outer, so sort in desc. length
+      @label_nodes.sort { |x, y| y[0].length - x[0].length }.each do |label, nodes|
         # Find lowest common ancestor
         if nodes.length == 1
           # Default to finding the row if it's in a table
@@ -378,7 +379,7 @@ module YDocx
                 orig_child.children.each do |subchild|
                   next_child = next_child.add_next_sibling subchild
                 end
-                orig_child = remove
+                orig_child.remove
               end
             end
           end
