@@ -2,14 +2,49 @@
 # encoding: utf-8
 
 require 'nokogiri'
+require 'erb'
+require 'ostruct'
+require 'andand'
+
+def to_bool(value)
+  if value.nil?
+    return false
+  end
+  value = value.to_s.downcase
+  return !value.empty? && value != 'no' && value != 'false' && value != 'null'
+end
 
 module YDocx
+  DELETE_TEXT = '###DELETE_ME###'
+
+  class ErbBinding < OpenStruct
+    def render(template)
+      ERB.new(template).result(binding)
+    end
+
+    def eval(x)
+      binding.eval(x)
+    end
+
+    def showif(x)
+      return x ? '' : DELETE_TEXT
+    end
+
+    def selfif(x)
+      return x || DELETE_TEXT
+    end
+
+    def append(x, y)
+      return x && x.to_s + y
+    end
+  end
+
   class TemplateParser
     OPTION_DEFAULTS = {
       :placeholder => 'None or N/A'
     }
 
-    VAR_PATTERN = /%([0-9a-zA-Z_\-\.\[\]]+)(|[^%\+]*)?(\+[^%]*)?%/
+    VAR_PATTERN = /<%=(([^%]|%(?!>))*)%>/
 
     def initialize(doc, fields, options)
       @label_nodes = {}
@@ -32,24 +67,49 @@ module YDocx
       end
     end
 
-    def unwrap(data)
-      if data.is_a?(Hash)
-        if data['value']
-          return unwrap(data['value'])
-        else
-          data.each do |k, v|
-            data[k] = unwrap(v)
+    def preprocess(data, fields)
+      if data.is_a?(Hash) && data['value']
+        return preprocess(data['value'], fields)
+      end
+
+      if !fields.andand[:id].nil?
+        case fields[:type]
+        when 'checkbox'
+          vals = {}
+          fields[:options].each do |k, v|
+            vals[k] = (to_bool(data.andand[k]) ? '&#9632; ' : '&#9633;')  + ' ' + v
+          end
+          return OpenStruct.new(vals)
+        when 'radio'
+          return fields[:options][data]
+        when 'currency'
+          return data && '$' + data
+        end
+      elsif data.is_a?(Hash)
+        data.each do |k, v|
+          data[k] = preprocess(v, fields[k])
+        end
+        fields.each do |k, v|
+          if data[k].nil?
+            if v[:id].nil?
+              data[k] = []
+            else
+              data[k] = preprocess(nil, v)
+            end
           end
         end
+        return OpenStruct.new(data)
       elsif data.is_a?(Array)
-        return data.map { |d| unwrap(d) }
+        return data.map { |d| preprocess(d, fields) }
       end
 
       return data
     end
 
     def replace(data)
-      data = unwrap(data)
+      data = preprocess(data, @fields)
+      @erb_binding = ErbBinding.new(data)
+      @erb_binding.placeholder = @options[:placeholder]
 
       doc = Nokogiri::XML.parse(@doc)
       merge_runs(doc)
@@ -57,69 +117,6 @@ module YDocx
       group_values(root, data)
       replace_runs(root, data)
       return doc
-    end
-
-    def rec_lookup(parts, fields, data, data_index = [])
-      if parts.length == 1
-        if fields[:type] == 'checkbox'
-          return [data && data[parts[0]], fields, parts[0]]
-        elsif fields[parts[0]].nil?
-          #p parts
-          return nil
-        else
-          return [data && data[parts[0]], fields[parts[0]]]
-        end
-      else
-        if fields[parts[0]].nil?
-          #p parts
-          return nil
-        elsif fields[parts[0]][:type].nil?
-          data = data && data[parts[0]]
-          if data.is_a?(Hash) && !data['value'].nil?
-            data = data['value']
-          end
-          return rec_lookup(parts[1..-1], fields[parts[0]], data && data[data_index[0]], data_index[1..-1])
-        else
-          return rec_lookup(parts[1..-1], fields[parts[0]], data && data[parts[0]], data_index)
-        end
-      end
-    end
-
-    def lookup(str, data, data_index = [])
-      parts = str.split('.')
-      rec_lookup(parts, @fields, data, data_index)
-    end
-
-    def is_false(value)
-      if value.nil?
-        return true
-      end
-      value = value.to_s.downcase
-      return value.empty? || value == 'no' || value == 'false' || value == 'null'
-    end
-
-    def stringify(obj, default = nil, after = nil)
-      if obj.nil?
-        return default || @options[:placeholder]
-      end
-
-      val = obj[0]
-      field = obj[1]
-      if field[:type] == 'checkbox'
-        return (val ? '&#9632; ' : '&#9633;')  + ' ' + field[:options][obj[2]]
-      end
-
-      if val.nil?
-        return default || @options[:placeholder]
-      end
-
-      if field[:type] == 'radio'
-        return field[:options][val]
-      elsif field[:type] == 'currency'
-        return '$' + val
-      else
-        return val.to_s
-      end
     end
 
     def merge_runs(node)
@@ -175,16 +172,11 @@ module YDocx
         run.children.each do |t|
           if t.name == 't'
             t.content.scan(VAR_PATTERN).each do |match|
-              parts = match[0].split('.')
-              if parts.length > 1
-                field = @fields
-                parts.each_with_index do |p, i|
-                  field = field[p]
-                  if field.nil?
-                    break
-                  end
-                  if field[:id].nil?
-                    (@label_nodes[parts[0..i].join('.')] ||= []) << run
+              if m = match[0].match(/([\$0-9a-zA-Z_\-\.\[.*\]]+\[.*\])/)
+                pieces = m[0].split('.')
+                pieces.each_with_index do |piece, i|
+                  if piece.match /\[[^\[]*\]$/
+                    (@label_nodes[pieces[0..i].join('.')] ||= []) << run
                   end
                 end
               end
@@ -282,111 +274,93 @@ module YDocx
       end
     end
 
+    def add_placeholder(str)
+      m = str.match(VAR_PATTERN)
+      return "<%= (#{m[1]}) || '#{@options[:placeholder]}' %>"
+    end
+
+    def process_indices(str)
+      cur_array = -1
+      str = str.gsub('.', '.andand.')
+      str.gsub(/\[[^\[]*\]/) do
+        cur_array += 1
+        "[$index[#{cur_array}]]"
+      end
+    end
+
     def replace_runs(node, data, data_index = [])
-      # process if statements
-      if node.name == 'tbl'
-        if tr = node.at_xpath('w:tr')
-          if tc = tr.at_xpath('w:tc')
-            if t = tc.at_xpath('.//w:t')
-              value = ''
-              t.content.scan(/%(show)?if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
-                value = lookup(match[2], data, data_index)
-                value = value && value.first
-                bool = is_false(value)
-                bool = !bool if match[1]
-                if bool
-                  node.remove
-                  return
-                end
-              end
-              t.inner_html = t.content.gsub(/%if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
-              t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value.to_s)
-            end
-          end
-        end
-      end
-
       if node.name == 'p'
-        if t = node.at_xpath('.//w:t')
-          value = ''
-          t.content.scan(/%(show)?if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/).each do |match|
-            value = lookup(match[2], data, data_index)
-            value = value && value.first
-            bool = is_false(value)
-            bool = !bool if match[1]
-            if bool
-              if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
-                node.children.remove
-              else
-                node.remove
-              end
-              return
-            end
-          end
-          t.inner_html = t.content.gsub(/%if(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, '')
-          t.inner_html = t.content.gsub(/%showif(not)? ([0-9a-zA-Z_\-\.\[\]]+)%/, value.to_s)
-        end
-
         cur_child = 0
-        while cur_child < node.children.length
-          r = node.children[cur_child]
+        node.children.each do |r|
           text = r.at_xpath('w:t')
-          if text.nil?
-            cur_child += 1
-            next
-          end
-
-          last_index = 0
-          processed = ''
-          text.content.to_enum(:scan, VAR_PATTERN).each do
-            match = Regexp.last_match
-            index = match.pre_match.length
-            if index > last_index
-              processed += text.content[last_index..index-1]
+          if !text.nil?
+            $index = data_index
+            content = text.content.gsub(VAR_PATTERN) do |match|
+              add_placeholder(process_indices(match))
             end
-            processed += stringify(lookup(match[1], data, data_index), match[2] && match[2][1..-1], match[3] && match[3][1..-1])
-            last_index = index + match[0].length
+            p content
+            text.inner_html = @erb_binding.render(content)
+            p text.inner_html
           end
-          processed += text.content[last_index..-1]
-          text.inner_html = processed
-          cur_child += 1
         end
-        return
-      end
 
-      prev_child = nil
-      node.children.each do |child|
-        if label = child['templateLabel']
-          dat = lookup(label, data, data_index)
-          dat = dat && dat.first
+        if t = node.at_xpath('.//w:t')
+          if t.content[DELETE_TEXT]
+            if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
+              node.children.remove
+            else
+              node.remove
+            end
+            return
+          end
+        end
+      else
+        prev_child = nil
+        node.children.each do |child|
+          if label = child['templateLabel']
+            $index = data_index
+            dat = @erb_binding.eval(process_indices(label[0..-3]))
 
-          if dat.nil? || dat.length == 0
-            child.remove
-          else
-            master_copy = child.clone
-            child.remove
+            if dat.nil? || dat.length == 0
+              child.remove
+            else
+              master_copy = child.clone
+              child.remove
 
-            next_child = prev_child
-            for i in 0..dat.length-1
-              if next_child.nil?
-                next_child = node.before master_copy.clone
-              else
-                next_child = next_child.add_next_sibling(master_copy.clone)
-              end
-              replace_runs(next_child, data, data_index + [i])
-              if node.name == 'templateGroup'
-                orig_child = next_child
-                orig_child.children.each do |subchild|
-                  next_child = next_child.add_next_sibling subchild
+              next_child = prev_child
+              for i in 0..dat.length-1
+                if next_child.nil?
+                  next_child = node.before master_copy.clone
+                else
+                  next_child = next_child.add_next_sibling(master_copy.clone)
                 end
-                orig_child.remove
+                replace_runs(next_child, data, data_index + [i])
+                if node.name == 'templateGroup'
+                  orig_child = next_child
+                  orig_child.children.each do |subchild|
+                    next_child = next_child.add_next_sibling subchild
+                  end
+                  orig_child.remove
+                end
+              end
+            end
+          else
+            replace_runs(child, data, data_index)
+          end
+          prev_child = child
+        end        
+
+        if node.name == 'tbl'
+          if tr = node.at_xpath('w:tr')
+            if tc = tr.at_xpath('w:tc')
+              if t = tc.at_xpath('.//w:t')
+                if t.content[DELETE_TEXT]
+                  node.remove
+                end
               end
             end
           end
-        else
-          replace_runs(child, data, data_index)
         end
-        prev_child = child
       end
     end
   end
