@@ -27,15 +27,23 @@ module YDocx
     end
 
     def showif(x)
-      return x ? '' : DELETE_TEXT
+      return to_bool(x) ? '' : DELETE_TEXT
     end
 
     def selfif(x)
-      return x || DELETE_TEXT
+      return to_bool(x) || DELETE_TEXT
     end
 
-    def append(x, y)
-      return x && x.to_s + y
+    def append(x, y, placeholder = '')
+      return x && x.to_s + y || placeholder
+    end
+
+    def date(x)
+      if x.to_i
+        return Time.at(x.to_i).strftime('%Y/%-m/%-d')
+      else
+        return nil
+      end
     end
   end
 
@@ -83,7 +91,7 @@ module YDocx
         when 'radio'
           return fields[:options][data]
         when 'currency'
-          return data && '$' + data
+          return data && !data.empty? && '$' + data
         end
       elsif data.is_a?(Hash)
         data.each do |k, v|
