@@ -2,6 +2,7 @@
 # coding: utf-8
 
 require 'json'
+#require 'ruby-prof'
 
 if $0 == __FILE__
   require 'pathname'
@@ -31,7 +32,15 @@ load 'client.rb'
 fields = Client::FIELDS.dup
 argv = ARGV.dup
 if !argv[0].nil?
+  if defined? RubyProf
+    RubyProf.start
+  end
   YDocx::Document.fill_template(argv[0], data, fields, argv[1] || (File.basename(argv[0], '.docx') + '.out.docx'))
+  if defined? RubyProf
+    result = RubyProf.stop
+    printer = RubyProf::GraphHtmlPrinter.new(result)
+    printer.print(STDOUT)
+  end
   puts 'Successfully filled template with data.'
 else
   puts 'usage: templatex template_file output_file'

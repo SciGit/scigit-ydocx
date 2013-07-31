@@ -120,7 +120,6 @@ module YDocx
       @erb_binding.placeholder = @options[:placeholder]
 
       doc = Nokogiri::XML.parse(@doc)
-      merge_runs(doc)
       root = doc.at_xpath('//w:document//w:body')
       group_values(root, data)
       replace_runs(root, data)
@@ -128,26 +127,34 @@ module YDocx
       return doc
     end
 
-    def merge_runs(node)
+    # Much faster than xpath; we don't have to do any parsing etc
+    def find_child(node, name)
+      node.children.find { |child | child.name == name }
+    end
+
+    def group_values(node, data)
       node.xpath('.//w:p').each do |p|
         cur_child = 0
         while cur_child < p.children.length
           r = p.children[cur_child]
-          text = r.at_xpath('w:t')
+          text = find_child(r, 't')
+          prop = find_child(r, 'rPr')
+
           if text.nil?
             cur_child += 1
             next
           end
 
-          prop = r.at_xpath('w:rPr')
           prop = prop ? prop.to_s : ''
           while cur_child + 1 < p.children.length
             next_r = p.children[cur_child + 1]
-            next_prop = next_r.at_xpath('w:rPr')
+            next_text = find_child(next_r, 't')
+            next_prop = find_child(next_r, 'rPr')
             next_prop = next_prop ? next_prop.to_s : ''
+            
             if next_r.name.start_with?('bookmark') || next_r.name == 'proofErr'
               next_r.remove # These are inserted randomly, can't really tell what they do
-            elsif next_prop == prop && (next_text = next_r.at_xpath('w:t'))
+            elsif next_prop == prop && next_text
               whitespace = false
               next_r.children.each do |c|
                 if c.name == 'br' || c.name == 'tab'
@@ -171,26 +178,18 @@ module YDocx
             end
           end
 
-          cur_child += 1
-        end
-      end
-    end
-
-    def group_values(node, data)
-      node.xpath('.//w:r').each do |run|
-        run.children.each do |t|
-          if t.name == 't'
-            t.content.scan(VAR_PATTERN).each do |match|
-              if m = match[0].match(/([\$0-9a-zA-Z_\-\.\[.*\]]+\[.*\])/)
-                pieces = m[0].split('.')
-                pieces.each_with_index do |piece, i|
-                  if piece.match /\[[^\[]*\]$/
-                    (@label_nodes[pieces[0..i].join('.')] ||= []) << run
-                  end
+          text.content.scan(VAR_PATTERN).each do |match|
+            if m = match[0].match(/([\$0-9a-zA-Z_\-\.\[.*\]]+\[.*\])/)
+              pieces = m[0].split('.')
+              pieces.each_with_index do |piece, i|
+                if piece.match /\[[^\[]*\]$/
+                  (@label_nodes[pieces[0..i].join('.')] ||= []) << r
                 end
               end
             end
           end
+
+          cur_child += 1
         end
       end
 
@@ -301,7 +300,7 @@ module YDocx
       if node.name == 'p'
         cur_child = 0
         node.children.each do |r|
-          text = r.at_xpath('w:t')
+          text = find_child(r, 't')
           if !text.nil?
             $index = data_index
             content = text.content.gsub(VAR_PATTERN) do |match|
@@ -350,20 +349,23 @@ module YDocx
 
     def remove_empty(node)
       if node.name == 'p'
-        if t = node.at_xpath('.//w:t')
-          if t.content[DELETE_TEXT]
-            if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
-              node.children.remove
-            else
-              node.remove
+        node.children.each do |child|
+          if child.name == 'r'
+            t = find_child(child, 't')
+            if t && t.content[DELETE_TEXT]
+              if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
+                node.children.remove
+              else
+                node.remove
+              end
+              return
             end
-            return
           end
         end
       else
         if node.name == 'tbl'
           node.xpath('w:tr').each do |tr|
-            if tc = tr.at_xpath('w:tc')
+            if tc = find_child(tr, 'tc')
               if t = tc.at_xpath('.//w:t')
                 if t.content[DELETE_TEXT]
                   tr.remove
@@ -372,7 +374,7 @@ module YDocx
             end
           end
 
-          if node.at_xpath('w:tr').nil?
+          if find_child(node, 'tr').nil?
             node.remove
             return
           end
