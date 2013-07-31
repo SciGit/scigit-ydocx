@@ -29,19 +29,6 @@ data['primaryBroker'] = 'Hanson Wang'
 
 load 'client.rb'
 fields = Client::FIELDS.dup
-fields << {:id => 'brokerOffice', :type => 'text'}
-fields << {:id => 'brokerAddress', :type => 'text'}
-fields << {:id => 'brokerWebsite', :type => 'text'}
-fields << {:id => 'brokerPhone', :type => 'text'}
-fields << {:id => 'brokerFax', :type => 'text'}
-fields << {:id => 'primaryBroker', :type => 'text'}
-fields << {:id => 'brokerContacts', :type => [
-  {:id => 'name', :type => 'text'},
-  {:id => 'title', :type => 'text'},
-  {:id => 'email', :type => 'text'},
-  {:id => 'phone', :type => 'text'},
-]}
-
 argv = ARGV.dup
 if !argv[0].nil?
   YDocx::Document.fill_template(argv[0], data, fields, argv[1] || (File.basename(argv[0], '.docx') + '.out.docx'))

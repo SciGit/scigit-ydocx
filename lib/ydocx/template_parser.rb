@@ -87,9 +87,9 @@ module YDocx
         end
       elsif data.is_a?(Hash)
         data.each do |k, v|
-          data[k] = preprocess(v, fields[k])
+          data[k] = preprocess(v, fields.andand[k])
         end
-        fields.each do |k, v|
+        fields.andand.each do |k, v|
           if data[k].nil?
             if v[:id].nil?
               data[k] = []
@@ -298,9 +298,7 @@ module YDocx
             content = text.content.gsub(VAR_PATTERN) do |match|
               add_placeholder(process_indices(match))
             end
-            p content
             text.inner_html = @erb_binding.render(content)
-            p text.inner_html
           end
         end
 
