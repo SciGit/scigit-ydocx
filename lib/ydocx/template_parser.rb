@@ -151,7 +151,7 @@ module YDocx
             next_text = find_child(next_r, 't')
             next_prop = find_child(next_r, 'rPr')
             next_prop = next_prop ? next_prop.to_s : ''
-            
+
             if next_r.name.start_with?('bookmark') || next_r.name == 'proofErr'
               next_r.remove # These are inserted randomly, can't really tell what they do
             elsif next_prop == prop && next_text
@@ -314,7 +314,7 @@ module YDocx
         node.children.each do |child|
           if label = child['templateLabel']
             $index = data_index
-            dat = @erb_binding.eval(process_indices(label[0..-3]))
+            dat = @erb_binding.eval(process_indices(label.gsub(/\[[^\[]*\]$/, '')))
 
             if dat.nil? || dat.length == 0
               child.remove
