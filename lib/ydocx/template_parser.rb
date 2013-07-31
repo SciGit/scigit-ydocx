@@ -124,6 +124,7 @@ module YDocx
       root = doc.at_xpath('//w:document//w:body')
       group_values(root, data)
       replace_runs(root, data)
+      remove_empty(root)
       return doc
     end
 
@@ -309,17 +310,6 @@ module YDocx
             text.inner_html = @erb_binding.render(content)
           end
         end
-
-        if t = node.at_xpath('.//w:t')
-          if t.content[DELETE_TEXT]
-            if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
-              node.children.remove
-            else
-              node.remove
-            end
-            return
-          end
-        end
       else
         prev_child = nil
         node.children.each do |child|
@@ -355,17 +345,41 @@ module YDocx
           end
           prev_child = child
         end        
+      end
+    end
 
+    def remove_empty(node)
+      if node.name == 'p'
+        if t = node.at_xpath('.//w:t')
+          if t.content[DELETE_TEXT]
+            if node.parent.name == 'tc' && node.parent.xpath('w:p').length == 1
+              node.children.remove
+            else
+              node.remove
+            end
+            return
+          end
+        end
+      else
         if node.name == 'tbl'
-          if tr = node.at_xpath('w:tr')
+          node.xpath('w:tr').each do |tr|
             if tc = tr.at_xpath('w:tc')
               if t = tc.at_xpath('.//w:t')
                 if t.content[DELETE_TEXT]
-                  node.remove
+                  tr.remove
                 end
               end
             end
           end
+
+          if node.at_xpath('w:tr').nil?
+            node.remove
+            return
+          end
+        end
+
+        node.children.each do |child|
+          remove_empty(child)
         end
       end
     end
