@@ -31,7 +31,7 @@ module YDocx
     end
 
     def selfif(x)
-      return to_bool(x) || DELETE_TEXT
+      return (to_bool(x) && x) || DELETE_TEXT
     end
 
     def append(x, y, placeholder = '')
