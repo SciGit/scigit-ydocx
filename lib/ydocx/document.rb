@@ -3,11 +3,6 @@
 
 require 'pathname'
 require 'zip/zip'
-begin
-  require 'RMagick'
-rescue LoadError
-  puts 'RMagick not found'
-end
 require 'ydocx/parser'
 require 'ydocx/template_parser'
 require 'ydocx/builder'
