@@ -21,17 +21,13 @@ module YDocx
     def render(template)
       ERB.new(template).result(binding)
     rescue Exception => e
-      puts "Could not render: " + template
-      puts e.to_s
-      exit(1)
+      raise "Could not render: " + template + "\n" + e.to_s
     end
 
     def eval(x)
       binding.eval(x)
     rescue Exception => e
-      puts "Could not evaluate: " + x
-      puts e.to_s
-      exit(1)
+      raise "Could not evaluate: " + x + "\n" + e.to_s
     end
 
     def showif(x)
