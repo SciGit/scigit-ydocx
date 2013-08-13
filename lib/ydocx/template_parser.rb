@@ -43,7 +43,7 @@ module YDocx
     end
 
     def date(x)
-      if x.to_i
+      if x.to_i > 0
         return Time.at(x.to_i).strftime('%Y/%-m/%-d')
       else
         return nil
@@ -347,7 +347,7 @@ module YDocx
             replace_runs(child, data, data_index)
           end
           prev_child = child
-        end        
+        end
       end
     end
 
