@@ -16,6 +16,7 @@ end
 
 module YDocx
   DELETE_TEXT = '###DELETE_ME###'
+  SECTION_TEXT = /<%\s*#\s*section(Start|End)\s*(.*)%>/
 
   class ErbBinding < OpenStruct
     def render(template)
@@ -65,6 +66,7 @@ module YDocx
       @doc = doc
       @fields = {}
       @options = options.merge(OPTION_DEFAULTS)
+      @sections = {}
       get_fields(@fields, fields)
     end
 
@@ -128,6 +130,26 @@ module YDocx
       group_values(root, data)
       replace_runs(root, data)
       remove_empty(root)
+
+      if section = @options[:extract_section]
+        if section = @sections[section]
+          sec_start = section[:start]
+          sec_end = section[:end]
+          take = false
+          root.children.each do |child|
+            if child == sec_start
+              take = true
+            end
+            if child.name != 'sectPr' && !take
+              child.remove
+            end
+            if child == sec_end
+              take = false
+            end
+          end
+        end
+      end
+
       return doc
     end
 
@@ -180,6 +202,13 @@ module YDocx
             else
               break
             end
+          end
+
+          if match = text.content.match(SECTION_TEXT)
+            type = match[1]
+            section_name = match[2]
+            @sections[section_name] ||= {}
+            @sections[section_name][type.downcase.to_sym] = p
           end
 
           text.content.scan(VAR_PATTERN).each do |match|
