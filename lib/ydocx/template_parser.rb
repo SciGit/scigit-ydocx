@@ -365,7 +365,7 @@ module YDocx
     def replace_runs(node, data, data_index = [])
       if node.name == 'p'
         cur_child = 0
-        node.children.each do |r|
+        node.xpath('.//w:r').each do |r|
           text = find_child(r, 't')
           if !text.nil?
             $index = data_index
@@ -373,6 +373,9 @@ module YDocx
               add_placeholder(process_indices(match))
             end
             text.inner_html = @erb_binding.render(content)
+            if text.inner_html.match(/[\t\n]/)
+              text['xml:space'] = 'preserve'
+            end
           end
         end
       else
