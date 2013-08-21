@@ -13,6 +13,20 @@ module YDocx
     def self.open(file, image_url = '')
       self.new(file, image_url)
     end
+    def self.extract_document(file)
+      begin
+        path = Pathname.new file
+        zip = Zip::ZipFile.open(path.realpath)
+      rescue
+        return nil
+      end
+
+      doc = zip.find_entry('word/document.xml').get_input_stream
+      xml = Nokogiri::XML.parse(doc)
+      doc.close
+
+      xml
+    end
     def self.fill_template(file, data, fields, output_file, options = {})
       begin
         path = Pathname.new file

@@ -128,27 +128,9 @@ module YDocx
       doc = Nokogiri::XML.parse(@doc)
       root = doc.at_xpath('//w:document//w:body')
       group_values(root, data)
+      replace_sections(root)
       replace_runs(root, data)
       remove_empty(root)
-
-      if section = @options[:extract_section]
-        if section = @sections[section]
-          sec_start = section[:start]
-          sec_end = section[:end]
-          take = false
-          root.children.each do |child|
-            if child == sec_start
-              take = true
-            end
-            if child.name != 'sectPr' && !take
-              child.remove
-            end
-            if child == sec_end
-              take = false
-            end
-          end
-        end
-      end
 
       return doc
     end
@@ -310,6 +292,57 @@ module YDocx
             group_node['templateLabel'] = label
             @node_label[group_node] = label
             @label_root[label] = group_node
+          end
+        end
+      end
+    end
+
+    def replace_sections(root)
+      if section = @options[:extract_section]
+        if section = @sections[section]
+          sec_start = section[:start]
+          sec_end = section[:end]
+          take = false
+          root.children.each do |child|
+            if child == sec_start
+              take = true
+            end
+            if child.name != 'sectPr' && !take
+              child.remove
+            end
+            if child == sec_end
+              take = false
+            end
+          end
+        end
+      elsif @options[:replace_sections]
+        section_starts = {}
+        @options[:replace_sections].each do |section, _|
+          if @sections[section]
+            section_starts[@sections[section][:start]] = section
+          else
+            puts "Warning: section '#{section}'' not found."
+          end
+        end
+
+        cur_section = nil
+        root.children.each do |child|
+          if section_starts[child]
+            cur_section = section_starts[child]
+            ins_doc = @options[:replace_sections][cur_section]
+            ins_doc.at_xpath('//w:document//w:body').children.each do |node|
+              if node.name == 'p' || node.name == 'tbl'
+                child.add_previous_sibling(node.dup)
+              end
+            end
+          end
+
+          if cur_section
+            child.remove
+          end
+
+          if cur_section && child == @sections[cur_section][:end]
+            cur_section = nil
           end
         end
       end
