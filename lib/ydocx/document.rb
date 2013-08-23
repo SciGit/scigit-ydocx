@@ -24,6 +24,7 @@ module YDocx
       doc = zip.find_entry('word/document.xml').get_input_stream
       xml = Nokogiri::XML.parse(doc)
       doc.close
+      zip.close
 
       xml
     end
@@ -32,11 +33,14 @@ module YDocx
         path = Pathname.new file
         zip = Zip::ZipFile.open(path.realpath)
       rescue
-        return nil
+        return []
       end
 
       doc = zip.find_entry('word/document.xml').get_input_stream
-      TemplateParser.new(doc).list_sections
+      sections = TemplateParser.new(doc).list_sections
+      zip.close
+
+      sections
     end
     def self.fill_template(file, data, fields, output_file, options = {})
       begin
