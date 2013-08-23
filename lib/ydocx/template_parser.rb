@@ -59,7 +59,7 @@ module YDocx
 
     VAR_PATTERN = /<%=(([^%]|%(?!>))*)%>/
 
-    def initialize(doc, fields, options)
+    def initialize(doc, fields = [], options = {})
       @label_nodes = {}
       @label_root = {}
       @node_label = {}
@@ -127,7 +127,7 @@ module YDocx
 
       doc = Nokogiri::XML.parse(@doc)
       root = doc.at_xpath('//w:document//w:body')
-      group_values(root, data)
+      group_values(root)
       replace_sections(root)
       replace_runs(root, data)
       remove_empty(root)
@@ -135,12 +135,19 @@ module YDocx
       return doc
     end
 
+    def list_sections
+      doc = Nokogiri::XML.parse(@doc)
+      root = doc.at_xpath('//w:document//w:body')
+      group_values(root)
+      @sections.keys
+    end
+
     # Much faster than xpath; we don't have to do any parsing etc
     def find_child(node, name)
       node.children.find { |child | child.name == name }
     end
 
-    def group_values(node, data)
+    def group_values(node)
       node.xpath('.//w:p').each do |p|
         cur_child = 0
         while cur_child < p.children.length

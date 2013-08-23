@@ -27,6 +27,17 @@ module YDocx
 
       xml
     end
+    def self.list_sections(file)
+      begin
+        path = Pathname.new file
+        zip = Zip::ZipFile.open(path.realpath)
+      rescue
+        return nil
+      end
+
+      doc = zip.find_entry('word/document.xml').get_input_stream
+      TemplateParser.new(doc).list_sections
+    end
     def self.fill_template(file, data, fields, output_file, options = {})
       begin
         path = Pathname.new file
