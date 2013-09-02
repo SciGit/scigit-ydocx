@@ -1,6 +1,7 @@
 source 'https://rubygems.org'
 
 gem 'nokogiri'
+gem 'zip'
 gem 'rubyzip'
 gem 'htmlentities'
 gem 'roman-numerals'
