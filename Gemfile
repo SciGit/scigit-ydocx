@@ -1,7 +1,7 @@
 source 'https://rubygems.org'
 
 gem 'nokogiri'
-gem 'rubyzip'
+gem 'rubyzip', :require => 'zip/zip'
 gem 'htmlentities'
 gem 'roman-numerals'
 gem 'diff-lcs'
