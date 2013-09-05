@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 require 'pathname'
-require 'zip/zip'
+require 'zip'
 require 'ydocx/parser'
 require 'ydocx/template_parser'
 require 'ydocx/builder'
@@ -16,7 +16,7 @@ module YDocx
     def self.extract_document(file)
       begin
         path = Pathname.new file
-        zip = Zip::ZipFile.open(path.realpath)
+        zip = Zip::File.open(path.realpath)
       rescue
         return nil
       end
@@ -31,7 +31,7 @@ module YDocx
     def self.list_sections(file)
       begin
         path = Pathname.new file
-        zip = Zip::ZipFile.open(path.realpath)
+        zip = Zip::File.open(path.realpath)
       rescue
         return []
       end
@@ -45,7 +45,7 @@ module YDocx
     def self.fill_template(file, data, fields, output_file, options = {})
       begin
         path = Pathname.new file
-        zip = Zip::ZipFile.open(path.realpath)
+        zip = Zip::File.open(path.realpath)
       rescue
         return nil
       end
@@ -54,7 +54,7 @@ module YDocx
       new_xml = TemplateParser.new(doc, fields, options).replace(data)
       doc.close
 
-      buffer = Zip::ZipOutputStream.write_buffer do |out|
+      buffer = Zip::OutputStream.write_buffer do |out|
         zip.entries.each do |e|
           out.put_next_entry(e.name)
           unless e.name == 'word/document.xml'
@@ -140,7 +140,7 @@ module YDocx
     def read(file)
       @path = Pathname.new file
       begin
-        @zip = Zip::ZipFile.open(@path.realpath)
+        @zip = Zip::File.open(@path.realpath)
       rescue
         # assume blank document
         @contents = ParsedDocument.new
