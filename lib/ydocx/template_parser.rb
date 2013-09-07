@@ -98,6 +98,14 @@ module YDocx
           return fields[:options][data]
         when 'currency'
           return data && !data.empty? && '$' + data
+        when 'units'
+          if data['qty'].nil? && !data['qty'].empty?
+            return nil
+          elsif data['unit'].nil? && !data['unit'].empty?
+            return data['qty']
+          else
+            return data['qty'] + ' ' + data['unit']
+          end
         end
       elsif data.is_a?(Hash)
         data.each do |k, v|

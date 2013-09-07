@@ -67,7 +67,6 @@ if !argv[0].nil?
   end
 
   YDocx::Document.fill_template(argv[0], data, fields, argv[1] || (File.basename(argv[0], '.docx') + '.out.docx'), options)
-  p YDocx::Document.list_sections(argv[0])
   if defined? RubyProf
     result = RubyProf.stop
     printer = RubyProf::GraphHtmlPrinter.new(result)
