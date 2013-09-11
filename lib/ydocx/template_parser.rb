@@ -24,6 +24,12 @@ class CheckboxValue
   end
 end
 
+class Array
+  def second
+    self[1]
+  end
+end
+
 def to_bool(value)
   if value.nil?
     return false
@@ -60,6 +66,10 @@ module YDocx
       return (to_bool(x) && x) || DELETE_TEXT
     end
 
+    def hide
+      DELETE_TEXT
+    end
+
     def append(x, y, placeholder = '')
       return x && x.to_s + y || placeholder
     end
@@ -69,6 +79,18 @@ module YDocx
         return Time.at(x.to_i).strftime('%Y/%-m/%-d')
       else
         return nil
+      end
+    end
+
+    def currency(x)
+      if x.nil?
+        nil
+      elsif x == x.to_i.to_s
+        Money.new(x.to_i * 100).format :no_cents
+      elsif x.match /^[0-9]/
+        '$' + x
+      else
+        x
       end
     end
   end
@@ -289,7 +311,7 @@ module YDocx
             end
           end
 
-          if low == high
+          if low == high && node_paths[0][low].name != 'tbl'
             node = node_paths[0][low]
             if @node_label[node].nil?
               @label_root[label] = node
@@ -297,9 +319,9 @@ module YDocx
               @node_label[node] = label
             end
           else
-            # Create a fake node containing all these paragraphs (and everything in between)
-            marked = Hash[node_paths.map { |p| [p[0], true] }]
-            body = node_paths[0][0].parent
+            # Create a fake node containing all these paragraphs/rows (and everything in between)
+            marked = Hash[node_paths.map { |p| [p[high + 1], true] }]
+            body = high == -1 ? node_paths[0][0].parent : node_paths[0][low]
             first_child = -1
             last_child = -1
             body.children.each_with_index do |c, i|
@@ -435,7 +457,7 @@ module YDocx
                   next_child = next_child.add_next_sibling(master_copy.clone)
                 end
                 replace_runs(next_child, data, data_index + [i])
-                if node.name == 'templateGroup'
+                if child.name == 'templateGroup'
                   orig_child = next_child
                   orig_child.children.each do |subchild|
                     next_child = next_child.add_next_sibling subchild
