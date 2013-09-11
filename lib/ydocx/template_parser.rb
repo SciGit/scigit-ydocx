@@ -5,6 +5,7 @@ require 'nokogiri'
 require 'erb'
 require 'ostruct'
 require 'andand'
+require 'money'
 
 class CheckboxValue
   attr_accessor :value
@@ -117,7 +118,7 @@ module YDocx
         when 'radio'
           return fields[:options][data]
         when 'currency'
-          return data && !data.empty? && '$' + data
+          return data && !data.empty? && Money.new(data.to_i * 100).format(:no_cents)
         when 'units'
           if data.nil? || data['qty'].nil? && !data['qty'].empty?
             return nil

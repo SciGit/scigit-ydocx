@@ -47,6 +47,7 @@ Gem::Specification.new do |s|
       s.add_runtime_dependency(%q<diff-lcs>, [">= 0"])
       s.add_runtime_dependency(%q<murmurhash3>, [">= 0"])
       s.add_runtime_dependency(%q<andand>, [">= 0"])
+      s.add_runtime_dependency(%q<money>, [">= 0"])
     else
       s.add_dependency(%q<nokogiri>, [">= 0"])
       s.add_dependency(%q<rubyzip>, [">= 0"])
@@ -55,6 +56,7 @@ Gem::Specification.new do |s|
       s.add_dependency(%q<diff-lcs>, [">= 0"])
       s.add_dependency(%q<murmurhash3>, [">= 0"])
       s.add_dependency(%q<andand>, [">= 0"])
+      s.add_runtime_dependency(%q<money>, [">= 0"])
     end
   else
     s.add_dependency(%q<nokogiri>, [">= 0"])
@@ -64,6 +66,7 @@ Gem::Specification.new do |s|
     s.add_dependency(%q<diff-lcs>, [">= 0"])
     s.add_dependency(%q<murmurhash3>, [">= 0"])
     s.add_dependency(%q<andand>, [">= 0"])
+    s.add_runtime_dependency(%q<money>, [">= 0"])
   end
 end
 
