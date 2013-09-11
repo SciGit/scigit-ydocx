@@ -6,9 +6,29 @@ require 'erb'
 require 'ostruct'
 require 'andand'
 
+class CheckboxValue
+  attr_accessor :value
+
+  def initialize(name, value)
+    @value = to_bool(value)
+    @str = (@value ? '&#9632; ' : '&#9633;')  + ' ' + name
+  end
+
+  def to_s
+    @str
+  end
+
+  def !
+    !@value
+  end
+end
+
 def to_bool(value)
   if value.nil?
     return false
+  end
+  if value.is_a?(CheckboxValue)
+    return value.value
   end
   value = value.to_s.downcase
   return !value.empty? && value != 'no' && value != 'false' && value != 'null'
@@ -91,7 +111,7 @@ module YDocx
         when 'checkbox'
           vals = {}
           fields[:options].each do |k, v|
-            vals[k] = (to_bool(data.andand[k]) ? '&#9632; ' : '&#9633;')  + ' ' + v
+            vals[k] = CheckboxValue.new(v, to_bool(data.andand[k]))
           end
           return OpenStruct.new(vals)
         when 'radio'
