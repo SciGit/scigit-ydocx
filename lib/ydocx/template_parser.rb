@@ -36,7 +36,7 @@ end
 
 module YDocx
   DELETE_TEXT = '###DELETE_ME###'
-  SECTION_TEXT = /<%\s*#\s*section(Start|End)\s*(.*)%>/
+  SECTION_TEXT = /<%\s*#\s*section_(start|end)\s*(.*)%>/
 
   class ErbBinding < OpenStruct
     def render(template)
