@@ -99,12 +99,12 @@ module YDocx
         when 'currency'
           return data && !data.empty? && '$' + data
         when 'units'
-          if data['qty'].nil? && !data['qty'].empty?
+          if data.nil? || data['qty'].nil? && !data['qty'].empty?
             return nil
           elsif data['unit'].nil? && !data['unit'].empty?
             return data['qty']
           else
-            return data['qty'] + ' ' + data['unit']
+            return data['qty'] + ' ' + data['unit'].downcase
           end
         end
       elsif data.is_a?(Hash)
@@ -370,7 +370,7 @@ module YDocx
 
     def process_indices(str)
       cur_array = -1
-      str = str.gsub(/(?=[a-zA-Z\]])\.(?=[a-zA-Z])/, '.andand.')
+      str = str.gsub(/(?<=[a-zA-Z\]])\.(?=[a-zA-Z])/, '.andand.')
       str.gsub(/\[[^\[]*\]/) do
         cur_array += 1
         "[$index[#{cur_array}]]"
