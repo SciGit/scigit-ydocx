@@ -291,18 +291,12 @@
     :placeholder: Annual energy generation by location (kWh)
   - :name: Energy sold to
     :id: solar_energy_sold_to
-    :type: checkbox
+    :type: dropdown
     :clientType: solar
     :options:
-      utility: Utility
-      host: Host
-      other: Other
-  - :name: Describe
-    :id: solar_energy_sold_to_other
-    :type: text
-    :clientType: solar
-    :placeholder: Describe other
-    :if: solar_annual_energy.other
+    - Utility
+    - Host
+    - Other
   - :name: Utility
     :id: solar_utility
     :type: text
@@ -581,6 +575,15 @@
       :options:
         'yes': Structural engineering evaluation completed?
       :if: pv_mounting_type == "rooftop"
+    - :type: heading
+      :clientType: solar
+      :text: Ground Mounted
+      :if: pv_mounting_type == "ground"
+    - :name: Describe site maintenance
+      :id: solar_site_maintenance
+      :type: textbox
+      :clientType: solar
+      :if: pv_mounting_type == "ground"
     - :type: separator
       :clientType: solar
       :if: solar_project_type == "Photovoltaic (PV)"
