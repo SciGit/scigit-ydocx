@@ -217,6 +217,10 @@
       :type: watch
       :watch: policy_infos.policy_start.value
       :expr: policy_infos.policy_start.value + 31557600.0
+  - :id: quote_required_by_asap
+    :type: checkbox
+    :options:
+      'yes': 'Quote required ASAP'
   - :name: Quote Required By
     :id: quote_required_by
     :type: date
