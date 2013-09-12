@@ -91,6 +91,13 @@
     :required: true
     :primary: true
     :unique: true
+  - :name: Email
+    :id: email
+    :placeholder: Email (ex. john@consilium.ca)
+    :type: email
+    :required: true
+    :primary: true
+    :unique: true
   - :name: Salutation
     :id: salutation
     :placeholder: Mr./Ms./Dr. (etc)
@@ -116,14 +123,12 @@
     :id: phone
     :placeholder: 'Area code - phone #, ext #'
     :type: phone
-  - :name: Email
-    :id: email
-    :placeholder: Email (ex. john@consilium.ca)
-    :type: email
   - :name: Other
     :id: other
     :placeholder: Main, Direct, Toll, Fax, Pager, Cell, Home
     :type: text
+  :modalPostPartial: templates/clients/sections/client_contacts_modal
+  :formDirective: client-contacts-form
 - :name: Business Ops
   :id: business_op
   :type:
@@ -167,14 +172,14 @@
   :id: policy_infos
   :type:
   - :name: Insurer
-    :id: prev_insurer
+    :id: insurer
     :required: true
     :placeholder: Name
     :type: text
     :intelligent: true
     :primary: true
   - :name: Policy Type
-    :id: prev_policy_type
+    :id: policy_type
     :required: true
     :type: dropdown
     :options:
@@ -187,79 +192,34 @@
     - Other
     :primary: true
   - :name: Policy Number
-    :id: prev_policy_number
+    :id: policy_number
     :placeholder: '# (ex. AAA1111111)'
     :type: text
   - :name: Premium
-    :id: prev_premium
+    :id: premium
     :placeholder: $ CAN (ex. 111.11)
     :type: currency
   - :name: ''
-    :id: prev_premium_monthly_or_annual
+    :id: premium_monthly_or_annual
     :type: radio
     :options:
       annually: Annually
       monthly: Monthly
   - :name: Inception Date
-    :id: prev_term_start
+    :id: policy_start
     :type: date
+    :required: true
   - :name: Expiry Date
-    :id: prev_term_end
+    :id: policy_end
     :type: date
+    :required: true
     :prefill:
       :type: watch
-      :watch: policy_infos.prev_term_start.value
-      :expr: policy_infos.prev_term_start.value + 31557600.0
+      :watch: policy_infos.policy_start.value
+      :expr: policy_infos.policy_start.value + 31557600.0
   - :name: Quote Required By
     :id: quote_required_by
     :type: date
-- :name: Prev. Policy Info
-  :id: prev_policy_infos
-  :type:
-  - :name: Insurer
-    :id: prev_insurer
-    :required: true
-    :placeholder: Name
-    :type: text
-    :intelligent: true
-    :primary: true
-  - :name: Policy Type
-    :id: prev_policy_type
-    :required: true
-    :type: dropdown
-    :options:
-    - CGL
-    - CMP
-    - IRCA
-    - Fleet
-    - Environmental
-    - WSIB Alternative
-    - Other
-    :primary: true
-  - :name: Policy Number
-    :id: prev_policy_number
-    :placeholder: '# (ex. AAA1111111)'
-    :type: text
-  - :name: Premium
-    :id: prev_premium
-    :placeholder: $ CAN (ex. 111.11)
-    :type: currency
-  - :name: ''
-    :id: prev_premium_monthly_or_annual
-    :type: radio
-    :options:
-      annually: Annually
-      monthly: Monthly
-  - :name: Inception Date
-    :id: prev_term_start
-    :type: date
-  - :name: Expiry Date
-    :id: prev_term_end
-    :type: date
-    :prefill:
-      :type: watch
-      :watch: prev_policy_infos.prev_term_start.value
-      :expr: prev_policy_infos.prev_term_start.value + 31557600.0
 - :name: Liability Info
   :id: liability_info
   :type:
@@ -1326,7 +1286,6 @@
       :type: currency
     - :id: deductible
       :type: text
-      :placeholder: $ CAN (ex 111.11)
     - :id: coinsurance
       :type: text
     - :id: limit
@@ -2429,11 +2388,12 @@
     :type: currency
   - :id: deductible
     :type: text
-    :placeholder: $ CAN (ex. 111.11)
   - :id: coinsurance
     :type: text
   - :id: limit
     :type: currency
+  - :id: premium
+    :type: text
 - :name: Misc. Notes
   :id: misc_note
   :type:

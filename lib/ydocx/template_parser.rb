@@ -413,7 +413,7 @@ module YDocx
 
     def process_indices(str)
       cur_array = -1
-      str = str.gsub(/(?<=[a-zA-Z\]])\.(?=[a-zA-Z])/, '.andand.')
+      str = str.gsub(/(?<=[a-zA-Z\]}])\.(?=[a-zA-Z])/, '.andand.')
       str.gsub(/\[[^\[]*\]/) do
         cur_array += 1
         "[$index[#{cur_array}]]"
