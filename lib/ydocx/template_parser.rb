@@ -268,22 +268,23 @@ module YDocx
 
       # Must be processed from inner to outer, so sort in desc. length
       @label_nodes.sort { |x, y| y[0].length - x[0].length }.each do |label, nodes|
+        nodes.uniq!
         # Find lowest common ancestor
         if nodes.length == 1
-          # Default to finding the row if it's in a table
+          # Default to finding the cell if it's in a table
           # or the last paragraph if it isn't
           node = nodes[0]
           first_p = nil
-          first_tr = nil
-          while first_tr == nil && node.name != 'body'
-            if node.name == 'tr'
-              first_tr ||= node
+          first_tc = nil
+          while first_tc == nil && node.name != 'body'
+            if node.name == 'tc'
+              first_tc ||= node
             elsif node.name == 'p'
               first_p ||= node
             end
             node = node.parent
           end
-          if root = first_tr || first_p
+          if root = first_tc || first_p
             @label_root[label] = root
             root['templateLabel'] = label
             @node_label[root] = label
