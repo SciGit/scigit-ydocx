@@ -70,6 +70,15 @@ module YDocx
       DELETE_TEXT
     end
 
+    # This will be handled in other code.
+    def ifblock(x)
+      hide
+    end
+
+    def endblock(x)
+      hide
+    end
+
     def append(x, y, placeholder = '')
       return x && x.to_s + y || placeholder
     end
@@ -260,6 +269,9 @@ module YDocx
                 end
               end
             end
+            if m = match[0].match(/(if|end)block (.*)/)
+              (@label_nodes["ifblock #{m[2]}"] ||= []) << r
+            end
           end
 
           cur_child += 1
@@ -442,7 +454,17 @@ module YDocx
         node.children.each do |child|
           if label = child['templateLabel']
             $index = data_index
-            dat = @erb_binding.eval(process_indices(label.gsub(/\[[^\[]*\]$/, '')))
+
+            if m = label.match(/^ifblock (.*)$/)
+              dat = @erb_binding.eval(process_indices(m[1]))
+              if dat
+                dat = [:ifblock]
+              else
+                dat = nil
+              end
+            else
+              dat = @erb_binding.eval(process_indices(label.gsub(/\[[^\[]*\]$/, '')))
+            end
 
             if dat.nil? || dat.length == 0
               child.remove
@@ -457,7 +479,7 @@ module YDocx
                 else
                   next_child = next_child.add_next_sibling(master_copy.clone)
                 end
-                replace_runs(next_child, data, data_index + [i])
+                replace_runs(next_child, data, data_index + (dat[i] == :ifblock ? [] : [i]))
                 if child.name == 'templateGroup'
                   orig_child = next_child
                   orig_child.children.each do |subchild|
