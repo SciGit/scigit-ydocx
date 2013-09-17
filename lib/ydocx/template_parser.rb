@@ -72,11 +72,11 @@ module YDocx
 
     # This will be handled in other code.
     def ifblock(x)
-      hide
+      ''
     end
 
     def endblock(x)
-      hide
+      ''
     end
 
     def append(x, y, placeholder = '')
