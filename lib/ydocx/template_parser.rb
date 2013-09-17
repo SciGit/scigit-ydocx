@@ -12,7 +12,7 @@ class CheckboxValue
 
   def initialize(name, value)
     @value = to_bool(value)
-    @str = (@value ? '&#9632; ' : '&#9633;')  + ' ' + name
+    @str = (@value ? '&#9632;' : '&#9633;')  + ' ' + name
   end
 
   def to_s
