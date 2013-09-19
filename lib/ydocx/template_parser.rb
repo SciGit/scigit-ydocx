@@ -10,9 +10,12 @@ require 'money'
 class CheckboxValue
   attr_accessor :value
 
+  CHECKED_CHAR = "\u00fe"
+  UNCHECKED_CHAR = "\u00a8"
+
   def initialize(name, value)
     @value = to_bool(value)
-    @str = (@value ? '&#9632;' : '&#9633;')  + ' ' + name
+    @str = (@value ? CHECKED_CHAR : UNCHECKED_CHAR)  + ' ' + name
   end
 
   def to_s
@@ -443,9 +446,31 @@ module YDocx
             content = text.content.gsub(VAR_PATTERN) do |match|
               add_placeholder(process_indices(match))
             end
-            text.inner_html = @erb_binding.render(content)
-            if text.inner_html.match(/[\t\n]/)
+            text.content = @erb_binding.render(content)
+            wspace_regex = /[\t\n]|(^\s)|(\s$)|(\s\s)/
+            if text.content.match(wspace_regex)
               text['xml:space'] = 'preserve'
+            end
+            # Extract checkbox symbols; put them into w:sym
+            check_regex = /([#{CheckboxValue::CHECKED_CHAR}#{CheckboxValue::UNCHECKED_CHAR}])/
+            if text.content[check_regex]
+              cur = text
+              text.content.split(check_regex).each do |p|
+                if p[check_regex]
+                  sym_node = Nokogiri::XML::Node.new 'w:sym', node
+                  sym_node['w:font'] = 'Wingdings'
+                  sym_node['w:char'] = p.ord.to_s(16)
+                  cur = cur.add_next_sibling(sym_node)
+                elsif !p.empty?
+                  t_node = text.clone
+                  t_node.content = p
+                  if p[wspace_regex]
+                    t_node['xml:space'] = 'preserve'
+                  end
+                  cur = cur.add_next_sibling(t_node)
+                end
+              end
+              text.remove
             end
           end
         end
