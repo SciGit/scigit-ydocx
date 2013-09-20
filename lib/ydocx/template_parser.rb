@@ -194,6 +194,7 @@ module YDocx
       replace_sections(root)
       replace_runs(root, data)
       remove_empty(root)
+      trim_empty_paragraphs(root)
 
       return doc
     end
@@ -278,7 +279,7 @@ module YDocx
                 last_ifblock = nil
               end
               (@label_nodes["ifblock #{block_id}"] ||= []) << r
-            elsif m = match[0].match(/([\$0-9a-zA-Z_\-\.\[.*\]]+\[.*\])/)
+            elsif m = match[0].match(/([\$0-9a-zA-Z_\-\.\[\]]+\[.*\])/)
               pieces = m[0].split('.')
               pieces.each_with_index do |piece, i|
                 if piece.match /\[[^\[]*\]$/
@@ -519,10 +520,12 @@ module YDocx
                   next_child = next_child.add_next_sibling(master_copy.clone)
                 end
                 replace_runs(next_child, data, data_index + (dat[i] == :ifblock ? [] : [i]))
+                prev_child = next_child
                 if child.name == 'templateGroup'
                   orig_child = next_child
                   orig_child.children.each do |subchild|
                     next_child = next_child.add_next_sibling subchild
+                    prev_child = next_child
                   end
                   orig_child.remove
                 end
@@ -530,8 +533,8 @@ module YDocx
             end
           else
             replace_runs(child, data, data_index)
+            prev_child = child
           end
-          prev_child = child
         end
       end
     end
@@ -571,6 +574,40 @@ module YDocx
 
         node.children.each do |child|
           remove_empty(child)
+        end
+      end
+    end
+
+    # Trim trailing empty paragraphs.
+    def trim_empty_paragraphs(node)
+      node.children.reverse_each do |child|
+        if child.name == 'sectPr'
+          last_sect = child
+        elsif child.name == 'p'
+          empty = true
+          if ts = child.xpath('.//w:t')
+            if ts.find { |t| !t.content.empty? }
+              empty = false
+            end
+          end
+          if empty
+            if pPr = child.at_xpath('w:pPr')
+              if sect = pPr.at_xpath('w:sectPr')
+                # This is the true "last section". Move it to the end of the body.
+                if last_sect
+                  last_sect.remove
+                end
+                pPr.remove
+                node.children.after(sect)
+                last_sect = sect
+              end
+            end
+            child.remove
+          else
+            break
+          end
+        else
+          break
         end
       end
     end
