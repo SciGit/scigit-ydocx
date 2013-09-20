@@ -78,7 +78,7 @@ module YDocx
       ''
     end
 
-    def endblock(x)
+    def endblock(x = nil)
       ''
     end
 
@@ -211,6 +211,7 @@ module YDocx
     end
 
     def group_values(node)
+      last_ifblock = nil
       node.xpath('.//w:p').each do |p|
         cur_child = 0
         while cur_child < p.children.length
@@ -272,8 +273,19 @@ module YDocx
                 end
               end
             end
-            if m = match[0].match(/(if|end)block (.*)/)
-              (@label_nodes["ifblock #{m[2]}"] ||= []) << r
+            if m = match[0].match(/(if|end)block ?(.*)/)
+              if m[1] == 'if'
+                if !last_ifblock.nil?
+                  raise "Unmatched ifblock (#{last_ifblock})"
+                end
+                last_ifblock = block_id = m[2]
+              elsif last_ifblock.nil?
+                raise "Unmatched endblock"
+              else
+                block_id = last_ifblock
+                last_ifblock = nil
+              end
+              (@label_nodes["ifblock #{block_id}"] ||= []) << r
             end
           end
 
@@ -428,12 +440,15 @@ module YDocx
     end
 
     def process_indices(str)
-      cur_array = -1
-      str = str.gsub(/(?<=[a-zA-Z\]}])\.(?=[a-zA-Z])/, '.andand.')
-      str.gsub(/\[[^\[]*\]/) do
-        cur_array += 1
-        "[$index[#{cur_array}]]"
-      end
+      str.split(/ /).map { |s|
+        s.gsub!(/(?<=[a-zA-Z\]}])\.(?=[a-zA-Z])/, '.andand.')
+
+        cur_array = -1
+        s.gsub(/\[[^\[]*\]/) do
+          cur_array += 1
+          "[$index[#{cur_array}]]"
+        end
+      }.join(' ')
     end
 
     def replace_runs(node, data, data_index = [])
