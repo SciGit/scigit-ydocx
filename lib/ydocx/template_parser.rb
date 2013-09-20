@@ -265,14 +265,6 @@ module YDocx
           end
 
           text.content.scan(VAR_PATTERN).each do |match|
-            if m = match[0].match(/([\$0-9a-zA-Z_\-\.\[.*\]]+\[.*\])/)
-              pieces = m[0].split('.')
-              pieces.each_with_index do |piece, i|
-                if piece.match /\[[^\[]*\]$/
-                  (@label_nodes[pieces[0..i].join('.')] ||= []) << r
-                end
-              end
-            end
             if m = match[0].match(/(if|end)block ?(.*)/)
               if m[1] == 'if'
                 if !last_ifblock.nil?
@@ -286,6 +278,13 @@ module YDocx
                 last_ifblock = nil
               end
               (@label_nodes["ifblock #{block_id}"] ||= []) << r
+            elsif m = match[0].match(/([\$0-9a-zA-Z_\-\.\[.*\]]+\[.*\])/)
+              pieces = m[0].split('.')
+              pieces.each_with_index do |piece, i|
+                if piece.match /\[[^\[]*\]$/
+                  (@label_nodes[pieces[0..i].join('.')] ||= []) << r
+                end
+              end
             end
           end
 
