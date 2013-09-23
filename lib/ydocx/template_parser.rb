@@ -393,7 +393,7 @@ module YDocx
             if child == sec_start
               take = true
             end
-            if child.name != 'sectPr' && !take
+            if !take
               child.remove
             end
             if child == sec_end
@@ -416,9 +416,21 @@ module YDocx
           if section_starts[child]
             cur_section = section_starts[child]
             ins_doc = @options[:replace_sections][cur_section]
+            prev_node = nil
             ins_doc.at_xpath('//w:document//w:body').children.each do |node|
               if node.name == 'p' || node.name == 'tbl'
-                child.add_previous_sibling(node.dup)
+                prev_node = node.dup
+                child.add_previous_sibling(prev_node)
+              elsif node.name == 'sectPr'
+                # Insert this into a paragraph.
+                if prev_node.nil? || prev_node.name != 'p'
+                  prev_node = Nokogiri::XML::Node.new('w:p', root)
+                  child.add_previous_sibling(prev_node)
+                end
+                pPr = prev_node.at_xpath('w:pPr')
+                pPr ||= Nokogiri::XML::Node.new('w:pPr', root)
+                pPr.add_child(node.dup)
+                prev_node.children.before(pPr)
               end
             end
           end
@@ -585,23 +597,41 @@ module YDocx
           last_sect = child
         elsif child.name == 'p'
           empty = true
-          if ts = child.xpath('.//w:t')
-            if ts.find { |t| !t.content.empty? }
+          child.children.each do |pchild|
+            if pchild.name == 'pPr'
+              # ignore
+            elsif pchild.name == 'r'
+              pchild.children.each do |rchild|
+                if rchild.name == 't'
+                  if !rchild.content.empty?
+                    empty = false
+                  end
+                elsif rchild.name != 'rPr'
+                  empty = false
+                end
+              end
+            else
               empty = false
             end
           end
-          if empty
-            if pPr = child.at_xpath('w:pPr')
-              if sect = pPr.at_xpath('w:sectPr')
-                # This is the true "last section". Move it to the end of the body.
-                if last_sect
-                  last_sect.remove
-                end
-                pPr.remove
-                node.children.after(sect)
-                last_sect = sect
+
+          if pPr = child.at_xpath('w:pPr')
+            if sect = pPr.at_xpath('w:sectPr')
+              # This is the true "last section". Move it to the end of the body.
+              if last_sect
+                last_sect.remove
               end
+              pPr.remove
+              node.children.after(sect)
+              last_sect = sect
+              if empty
+                child.remove
+              end
+              break
             end
+          end
+
+          if empty
             child.remove
           else
             break
