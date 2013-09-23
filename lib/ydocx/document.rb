@@ -54,6 +54,17 @@ module YDocx
       new_xml = TemplateParser.new(doc, fields, options).replace(data)
       doc.close
 
+      if new_xml.is_a?(Hash)
+        zip.close
+        # Replace this document with the section of another one.
+        opts = {}
+        if new_xml[:section]
+          opts[:extract_section] = new_xml[:section]
+        end
+        fill_template path.dirname.join(new_xml[:file]), data, fields, output_file, opts
+        return
+      end
+
       buffer = Zip::OutputStream.write_buffer do |out|
         zip.entries.each do |e|
           out.put_next_entry(e.name)

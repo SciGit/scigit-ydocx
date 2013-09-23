@@ -46,9 +46,11 @@ end
 
 module YDocx
   DELETE_TEXT = '###DELETE_ME###'
-  SECTION_TEXT = /<%\s*#\s*section_(start|end)\s*(.*)%>/
+  SECTION_TEXT = /<%\s*#\s*section_(start|end)\s*([^>]*)%>/
 
   class ErbBinding < OpenStruct
+    attr_accessor :_replace
+
     def render(template)
       ERB.new(template).result(binding)
     rescue Exception => e
@@ -104,6 +106,10 @@ module YDocx
       else
         x
       end
+    end
+
+    def replace(file, section = nil)
+      @_replace = {:file => file, :section => section}
     end
   end
 
@@ -193,6 +199,11 @@ module YDocx
       group_values(root)
       replace_sections(root)
       replace_runs(root, data)
+
+      if @erb_binding._replace
+        return @erb_binding._replace
+      end
+
       remove_empty(root)
       trim_empty_paragraphs(root)
 
@@ -383,11 +394,20 @@ module YDocx
       end
     end
 
+    def top_level(node)
+      while node.parent.name != 'body'
+        node = node.parent
+      end
+      node
+    end
+
     def replace_sections(root)
       if section = @options[:extract_section]
         if section = @sections[section]
-          sec_start = section[:start]
-          sec_end = section[:end]
+          # Might be enclosed in templateGroups now.
+          sec_start = top_level(section[:start])
+          sec_end = top_level(section[:end])
+
           take = false
           root.children.each do |child|
             if child == sec_start
