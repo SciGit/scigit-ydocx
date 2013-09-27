@@ -158,9 +158,9 @@ module YDocx
         when 'radio'
           return fields[:options][data]
         when 'currency'
-          return data && !data.empty? && Money.new(data.to_i * 100).format(:no_cents)
+          return data && data != '' && Money.new(data.to_i * 100).format(:no_cents)
         when 'units'
-          if data.nil? || data['qty'].nil? && !data['qty'].empty?
+          if data.nil? || data['qty'].nil? && data['qty'] != ''
             return nil
           elsif data['unit'].nil? && !data['unit'].empty?
             return data['qty']
