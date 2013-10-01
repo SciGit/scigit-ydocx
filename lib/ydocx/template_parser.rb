@@ -8,7 +8,7 @@ require 'andand'
 require 'money'
 require 'base64'
 require 'securerandom'
-require 'rmagick'
+require 'RMagick'
 
 class CheckboxValue
   attr_accessor :value
@@ -257,6 +257,9 @@ module YDocx
           else
             return data['qty'] + ' ' + data['unit'].downcase
           end
+        end
+        when 'file'
+          return OpenStruct.new(data)
         end
       elsif data.is_a?(Hash)
         data.each do |k, v|
