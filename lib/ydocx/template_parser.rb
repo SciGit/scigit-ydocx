@@ -6,6 +6,8 @@ require 'erb'
 require 'ostruct'
 require 'andand'
 require 'money'
+require 'base64'
+require 'securerandom'
 
 class CheckboxValue
   attr_accessor :value
@@ -49,7 +51,7 @@ module YDocx
   SECTION_TEXT = /<%\s*#\s*section_(start|end)\s*([^>]*)%>/
 
   class ErbBinding < OpenStruct
-    attr_accessor :_replace
+    attr_accessor :_replace, :_paragraph_flags
 
     def render(template)
       ERB.new(template).result(binding)
@@ -111,6 +113,18 @@ module YDocx
     def replace(file, section = nil)
       @_replace = {:file => file, :section => section}
     end
+
+    def new_paragraph
+      @_paragraph_flags = {}
+    end
+
+    def image(data, opts = {})
+      @_paragraph_flags ||= {}
+      @_paragraph_flags.merge!({
+        :image => data,
+        :image_opts => opts,
+      })
+    end
   end
 
   class TemplateParser
@@ -120,15 +134,90 @@ module YDocx
 
     VAR_PATTERN = /<%=(([^%]|%(?!>))*)%>/
 
-    def initialize(doc, fields = [], options = {})
+    def initialize(zip, fields = [], options = {})
+      @zip = zip
+      @files = {}
+      @images = []
+
       @label_nodes = {}
       @label_root = {}
       @node_label = {}
-      @doc = doc
+
       @fields = {}
       @options = options.merge(OPTION_DEFAULTS)
       @sections = {}
       get_fields(@fields, fields)
+    end
+
+    def xml_to_s(x)
+      x.to_xml(:indent => 0).gsub("\n", "")
+    end
+
+    def add_images
+      # 1 - Add content types to [Content_Types].xml
+      content_types = @zip.find_entry('[Content_Types].xml').get_input_stream
+      content_xml = Nokogiri::XML.parse(content_types)
+
+      image_types = {}
+      @images.each do |image|
+        ext = image.name.split('.').last
+        mime = image.mime_type
+        image_types[ext] = mime
+      end
+
+      root = content_xml.children.first
+      if defaults = root.children
+        defaults.each do |type|
+          image_types.delete(type['Extension'])
+        end
+      end
+
+      unless image_types.empty?
+        image_types.each do |ext, mime|
+          node = Nokogiri::XML::Node.new 'Default', @doc_xml
+          node['ContentType'] = mime
+          node['Extension'] = ext
+          if root.children
+            root.children.after node
+          else
+            root.children = node
+          end
+        end
+        @files['[Content_Types].xml'] = xml_to_s(content_xml)
+      end
+
+      # 2 - Add actual image files
+      @images.each do |image|
+        @files['word/media/' + image.name] = image.data
+      end
+
+      # 3 - Add references to word/_rels/document.xml.rels
+      rels = @zip.find_entry('word/_rels/document.xml.rels').get_input_stream
+      rel_xml = Nokogiri::XML.parse(rels)
+
+      root = rel_xml.children.first
+      high_id = 0
+      if relations = root.children
+        relations.each do |relat|
+          if m = relat['Id'].match(/rId([0-9]+)/)
+            high_id = [high_id, m[1].to_i].max
+          end
+        end
+      end
+
+      @images.each do |image|
+        relat = Nokogiri::XML::Node.new 'Relationship', @doc_xml
+        image.xml_node['r:id'] = relat['Id'] = 'rId' + (high_id += 1).to_s
+        relat['Type'] = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+        relat['Target'] = 'media/' + image.name
+        if root.children
+          root.children.after relat
+        else
+          root.children = relat
+        end
+      end
+
+      @files['word/_rels/document.xml.rels'] = xml_to_s(rel_xml)
     end
 
     def get_fields(store, fields)
@@ -194,8 +283,10 @@ module YDocx
       @erb_binding = ErbBinding.new(data)
       @erb_binding.placeholder = @options[:placeholder]
 
-      doc = Nokogiri::XML.parse(@doc)
-      root = doc.at_xpath('//w:document//w:body')
+      @doc = @zip.find_entry('word/document.xml').get_input_stream
+      @doc_xml = Nokogiri::XML.parse(@doc)
+
+      root = @doc_xml.at_xpath('//w:document//w:body')
       group_values(root)
       replace_sections(root)
       replace_runs(root, data)
@@ -207,11 +298,18 @@ module YDocx
       remove_empty(root)
       trim_empty_paragraphs(root)
 
-      return doc
+      if !@images.empty?
+        add_images
+      end
+
+      @files['word/document.xml'] = xml_to_s(@doc_xml)
+      return @files
     end
 
     def list_sections
+      @doc = @zip.find_entry('word/document.xml').get_input_stream
       doc = Nokogiri::XML.parse(@doc)
+
       root = doc.at_xpath('//w:document//w:body')
       group_values(root)
       @sections.keys
@@ -290,7 +388,7 @@ module YDocx
                 last_ifblock = nil
               end
               (@label_nodes["ifblock #{block_id}"] ||= []) << r
-            elsif m = match[0].match(/([\$0-9a-zA-Z_\-\.\[\]]+\[.*\])/)
+            elsif m = match[0].match(/([\$0-9a-zA-Z_\-\.\[\]]+\[[^\]]*\])/)
               pieces = m[0].split('.')
               pieces.each_with_index do |piece, i|
                 if piece.match /\[[^\[]*\]$/
@@ -483,9 +581,43 @@ module YDocx
       }.join(' ')
     end
 
+    def cm_to_pt(x)
+      return x * 28.3464567
+    end
+
+    def create_image(run, image, opts)
+      run.children.remove
+      pict = Nokogiri::XML::Node.new 'w:pict', @doc_xml
+      run.children = pict
+
+        shape = Nokogiri::XML::Node.new 'v:shape', @doc_xml
+        shape['id'] = SecureRandom.uuid
+        style = []
+        if opts[:width]
+          style << "width: #{cm_to_pt opts[:width]}pt"
+        end
+        if opts[:height]
+          style << "height: #{cm_to_pt opts[:height]}pt"
+        end
+        if !style.empty?
+          shape['style'] = style.join(';')
+        end
+        pict.children = shape
+
+          imagedata = Nokogiri::XML::Node.new 'v:imagedata', @doc_xml
+          shape.children = imagedata
+
+      new_image = image.dup
+      ext = new_image.name.split('.').last
+      new_image.name = 'consilium_attachment' + (@images.length + 1).to_s + '.' + ext
+      new_image.xml_node = imagedata
+      @images << new_image
+    end
+
     def replace_runs(node, data, data_index = [])
       if node.name == 'p'
         cur_child = 0
+        @erb_binding.new_paragraph
         node.xpath('.//w:r').each do |r|
           text = find_child(r, 't')
           if !text.nil?
@@ -494,6 +626,13 @@ module YDocx
               add_placeholder(process_indices(match))
             end
             text.content = @erb_binding.render(content)
+
+            # If it's an image, replace the entire run with an image.
+            if image = @erb_binding._paragraph_flags[:image]
+              create_image(r, image, @erb_binding._paragraph_flags[:image_opts])
+              next
+            end
+
             wspace_regex = /[\t\n]|(^\s)|(\s$)|(\s\s)/
             if text.content.match(wspace_regex)
               text['xml:space'] = 'preserve'
