@@ -36,7 +36,8 @@ module YDocx
         return []
       end
 
-      sections = TemplateParser.new(zip).list_sections
+      doc = zip.find_entry('word/document.xml').get_input_stream
+      sections = TemplateParser.new(doc).list_sections
       zip.close
 
       sections
@@ -49,33 +50,29 @@ module YDocx
         return nil
       end
 
-      new_files = TemplateParser.new(zip, fields, options).replace(data)
+      doc = zip.find_entry('word/document.xml').get_input_stream
+      new_xml = TemplateParser.new(doc, fields, options).replace(data)
+      doc.close
 
-      # Replace this document with another one.
-      if new_files[:file]
+      if new_xml.is_a?(Hash)
         zip.close
+        # Replace this document with the section of another one.
         opts = {}
-        if new_files[:section]
-          opts[:extract_section] = new_files[:section]
+        if new_xml[:section]
+          opts[:extract_section] = new_xml[:section]
         end
-        fill_template path.dirname.join(new_files[:file]), data, fields, output_file, opts
+        fill_template path.dirname.join(new_xml[:file]), data, fields, output_file, opts
         return
       end
 
       buffer = Zip::OutputStream.write_buffer do |out|
         zip.entries.each do |e|
           out.put_next_entry(e.name)
-          if new_files[e.name]
-            out.write new_files[e.name]
-            new_files.delete(e.name)
-          else
+          unless e.name == 'word/document.xml'
             out.write e.get_input_stream.read
+          else
+            out.write new_xml.to_xml(:indent => 0).gsub("\n", "")
           end
-        end
-
-        new_files.each do |name, data|
-          out.put_next_entry(name)
-          out.write data
         end
       end
 
