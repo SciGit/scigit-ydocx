@@ -8,6 +8,7 @@ require 'andand'
 require 'money'
 require 'base64'
 require 'securerandom'
+require 'rmagick'
 
 class CheckboxValue
   attr_accessor :value
@@ -586,6 +587,22 @@ module YDocx
     end
 
     def create_image(run, image, opts)
+      # Open the image and obtain the aspect ratio
+      image_file = Magick::Image.from_blob(image.data).first
+      h = image_file.rows
+      w = image_file.columns
+      # Assume 96 DPI.
+      cm_h = h / 96.0 * 2.54
+      cm_w = w / 96.0 * 2.54
+      # Scale it down to fit the provided dimensions, if necessary.
+      scale = 1
+      if opts[:width] && opts[:width] < cm_w
+        scale = opts[:width] / cm_w
+      end
+      if opts[:height] && opts[:height] < cm_h
+        scale = [scale, opts[:height] / cm_h].min
+      end
+
       run.children.remove
       pict = Nokogiri::XML::Node.new 'w:pict', @doc_xml
       run.children = pict
@@ -594,10 +611,10 @@ module YDocx
         shape['id'] = SecureRandom.uuid
         style = []
         if opts[:width]
-          style << "width: #{cm_to_pt opts[:width]}pt"
+          style << "width: #{cm_to_pt cm_w*scale}pt"
         end
         if opts[:height]
-          style << "height: #{cm_to_pt opts[:height]}pt"
+          style << "height: #{cm_to_pt cm_h*scale}pt"
         end
         if !style.empty?
           shape['style'] = style.join(';')
