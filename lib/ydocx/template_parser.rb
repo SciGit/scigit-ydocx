@@ -257,7 +257,6 @@ module YDocx
           else
             return data['qty'] + ' ' + data['unit'].downcase
           end
-        end
         when 'file'
           return OpenStruct.new(data)
         end
