@@ -88,7 +88,7 @@ module YDocx
     end
 
     def append(x, y, placeholder = '')
-      return x && x.to_s + y || placeholder
+      return x && x != '' && x.to_s + y || placeholder
     end
 
     def date(x)
